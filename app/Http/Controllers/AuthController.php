@@ -9,6 +9,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends BaseController
 {
@@ -20,14 +21,16 @@ class AuthController extends BaseController
             'password' => Hash::make($request->password)
         ]);
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = JWTAuth::fromUser($user);
 
         return $this->sendResponse(['user' => $user, 'token' => $token], 'Usuario registrado con éxito', 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
     {
-        if (!Auth::attempt(['email' => $request->email, 'password' => $request->password])) {
+        $credentials = $request->only(['email', 'password']);
+
+        if (!$token = JWTAuth::attempt($credentials)) {
             return $this->sendError('Credenciales inválidas', ['El Email o la Contraseña son incorrectos.'], 401);
         }
 
@@ -35,7 +38,6 @@ class AuthController extends BaseController
         if ($user->status !== 1) {
             return $this->sendError('Acceso denegado.', ['Su cuenta no está activa. Contacte al administrador.'], 403);
         }
-        $token = $user->createToken('auth_token')->plainTextToken;
 
         $data = [
             'token' => $token,
@@ -48,9 +50,11 @@ class AuthController extends BaseController
 
     public function logout(): JsonResponse
     {
-        $user = Auth::user();
-        $user->currentAccessToken()->delete(); 
-
-        return $this->sendResponse([], 'Sesión cerrada con éxito.');
+        try {
+            JWTAuth::invalidate(JWTAuth::getToken());
+            return $this->sendResponse([], 'Sesión cerrada con éxito.');
+        } catch (\Exception $e) {
+            return $this->sendError('Error al cerrar sesión.', [$e->getMessage()], 500);
+        }
     }
 }
