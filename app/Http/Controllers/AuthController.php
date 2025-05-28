@@ -30,11 +30,15 @@ class AuthController extends BaseController
     {
         $credentials = $request->only(['email', 'password']);
 
+        $user = User::where('email', $credentials['email'])->first();
+        if (!$user) {
+            return $this->sendError('Usuario no encontrado', ['El usuario con ese email no existe.'], 404);
+        }
+
         if (!$token = JWTAuth::attempt($credentials)) {
             return $this->sendError('Credenciales inválidas', ['El Email o la Contraseña son incorrectos.'], 401);
         }
 
-        $user = Auth::user();
         if ($user->status !== 1) {
             return $this->sendError('Acceso denegado.', ['Su cuenta no está activa. Contacte al administrador.'], 403);
         }

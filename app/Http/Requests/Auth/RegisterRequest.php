@@ -32,7 +32,7 @@ class RegisterRequest extends FormRequest
     {
         return [
             'email.unique' => 'Este correo ya está registrado.',
-            'password.confirmed' => 'La confirmación de contraseña no coincide.',
+            'password.confirmed' => 'Las contraseñas no coinciden.',
         ];
     }
 }
