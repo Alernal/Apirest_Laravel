@@ -13,6 +13,9 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::group(['middleware' => 'auth:api'], function () {
     Route::get('/user', [UserController::class, 'show']);
+    Route::patch('/user', [UserController::class, 'update']);
+    Route::post('/user/change-password', [UserController::class, 'changePassword']);
+    Route::post('/user/profile-image', [UserController::class, 'uploadProfileImage']);
 
     /* Products List, Store, Update, Delete */
     Route::get('/products', [ProductController::class, 'index']);

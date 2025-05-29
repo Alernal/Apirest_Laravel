@@ -16,14 +16,14 @@ class AuthController extends BaseController
     public function register(RegisterRequest $request): JsonResponse
     {
         $user = User::create([
-            'name' => $request->name,
+            'first_name' => $request->first_name,
             'email' => $request->email,
             'password' => Hash::make($request->password)
         ]);
 
         $token = JWTAuth::fromUser($user);
 
-        return $this->sendResponse(['user' => $user, 'token' => $token], 'Usuario registrado con éxito', 201);
+        return $this->sendResponse(['user' => $user,'token' => $token], 'Usuario registrado con éxito', 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
@@ -43,13 +43,7 @@ class AuthController extends BaseController
             return $this->sendError('Acceso denegado.', ['Su cuenta no está activa. Contacte al administrador.'], 403);
         }
 
-        $data = [
-            'token' => $token,
-            'name' => $user->name,
-            'email' => $user->email,
-        ];
-
-        return $this->sendResponse($data, 'Inicio de sesión exitoso.');
+        return $this->sendResponse(['user' => $user, 'token' => $token], 'Inicio de sesión exitoso.');
     }
 
     public function logout(): JsonResponse

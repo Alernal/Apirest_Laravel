@@ -14,7 +14,7 @@ class ProductImageController extends BaseController
     {
         $request->validate([
             'images' => 'required|array',
-            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
         ]);
 
         foreach ($request->file('images') as $image) {
@@ -31,8 +31,10 @@ class ProductImageController extends BaseController
         return $this->sendResponse([], 'Imágenes subidas correctamente.', 201);
     }
 
-    public function destroy(ProductImage $image)
+    public function destroy(Product $product, int $id)
     {
+        $image = ProductImage::findOrFail($id); // Busca la imagen por ID
+
         // Extraer path relativo
         $path = str_replace('/storage/', '', $image->url);
 

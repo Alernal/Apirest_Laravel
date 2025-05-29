@@ -19,8 +19,14 @@ class User extends Authenticatable implements JWTSubject
      * @var list<string>
      */
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
         'email',
+        'phone',
+        'gender',
+        'profile_image_url',
+        'role',
+        'is_verified',
         'password',
     ];
 
@@ -48,7 +54,7 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /* JWT Configuration */
-     public function getJWTIdentifier()
+    public function getJWTIdentifier()
     {
         return $this->getKey();
     }
@@ -59,5 +65,4 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /* RELACIONES */
-
 }
