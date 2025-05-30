@@ -32,25 +32,6 @@ return new class extends Migration
             $table->string('url');
             $table->timestamps();
         });
-
-        // Tabla: product_features
-        Schema::create('product_features', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
-            $table->text('feature');
-            $table->timestamps();
-        });
-
-        // Tabla: product_discounts
-        Schema::create('product_discounts', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
-            $table->decimal('discount_value', 10, 2);
-            $table->enum('discount_type', ['percent', 'fixed']); // % o monto fijo
-            $table->timestamp('start_date')->nullable();
-            $table->timestamp('end_date')->nullable();
-            $table->timestamps();
-        });
     }
 
     /**

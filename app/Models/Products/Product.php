@@ -9,20 +9,10 @@ class Product extends Model
 {
     protected $guarded = [];
 
-    protected $with = ['images', 'features', 'discount'];
+    protected $with = ['images'];
 
     public function images(): HasMany
     {
         return $this->hasMany(ProductImage::class);
-    }
-
-    public function features(): HasMany
-    {
-        return $this->hasMany(ProductFeature::class);
-    }
-
-    public function discount()
-    {
-        return $this->hasOne(ProductDiscount::class);
     }
 }
