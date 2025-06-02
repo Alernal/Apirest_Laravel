@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Auth;
 
 class WishlistController extends BaseController
 {
-
     public function index()
     {
         $user = Auth::user();

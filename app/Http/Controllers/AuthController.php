@@ -21,9 +21,11 @@ class AuthController extends BaseController
             'password' => Hash::make($request->password)
         ]);
 
+        $user->refresh();
+
         $token = JWTAuth::fromUser($user);
 
-        return $this->sendResponse(['user' => $user,'token' => $token], 'Usuario registrado con éxito', 201);
+        return $this->sendResponse(['user' => $user, 'token' => $token], 'Usuario registrado con éxito', 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
