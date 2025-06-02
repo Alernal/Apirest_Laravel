@@ -49,7 +49,7 @@ class ProductController extends BaseController
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return $this->sendError('Error al crear el producto: ' . $e->getMessage(), 500);
+            return $this->sendError('Error al crear el producto: ' . $e->getMessage(), [],  500);
         }
     }
 
@@ -82,7 +82,7 @@ class ProductController extends BaseController
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return $this->sendError('Error al actualizar el producto: ' . $e->getMessage(), 500);
+            return $this->sendError('Error al actualizar el producto: ' . $e->getMessage(), [],  500);
         }
     }
 
@@ -100,7 +100,7 @@ class ProductController extends BaseController
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return $this->sendError('Error al eliminar el producto: ' . $e->getMessage(), 500);
+            return $this->sendError('Error al eliminar el producto: ' . $e->getMessage(), [], 500);
         }
     }
 }

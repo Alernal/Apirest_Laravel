@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AddressController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\Products\ProductController;
@@ -42,8 +43,15 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::get('/cart', [CartController::class, 'index']);
     Route::post('/cart/{productId}', [CartController::class, 'store']);
     Route::patch('/cart/{productId}/decrement', [CartController::class, 'decrement']);
-    Route::delete('/cart/clear', [CartController::class, 'clear']); // ✅ Esta debe ir antes
+    Route::delete('/cart/clear', [CartController::class, 'clear']);
     Route::delete('/cart/{productId}', [CartController::class, 'destroy']);
+
+    /* Addresses */
+    Route::get('/addresses', [AddressController::class, 'index']);
+    Route::post('/addresses', [AddressController::class, 'store']);
+    Route::get('/addresses/{address}', [AddressController::class, 'show']);
+    Route::patch('/addresses/{address}', [AddressController::class, 'update']);
+    Route::delete('/addresses/{address}', [AddressController::class, 'destroy']);
 
     Route::post('/logout', [AuthController::class, 'logout']);
 });
