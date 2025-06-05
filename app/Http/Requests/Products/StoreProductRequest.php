@@ -19,7 +19,7 @@ class StoreProductRequest extends FormRequest
      *
      * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
-    
+
     public function rules(): array
     {
         $productId = $this->product?->id;
@@ -36,9 +36,9 @@ class StoreProductRequest extends FormRequest
             'in_stock' => 'boolean',
             'stock_count' => 'required|integer|min:0',
 
-            // Características (array de textos)
-            'features' => 'nullable|array',
-            'features.*' => 'required|string|max:1000',
+            'images' => 'nullable|array',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
+
         ];
     }
 }

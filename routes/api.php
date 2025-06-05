@@ -3,6 +3,7 @@
 use App\Http\Controllers\AddressController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Products\ProductImageController;
 use App\Http\Controllers\UserController;
@@ -52,6 +53,13 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::get('/addresses/{address}', [AddressController::class, 'show']);
     Route::patch('/addresses/{address}', [AddressController::class, 'update']);
     Route::delete('/addresses/{address}', [AddressController::class, 'destroy']);
+
+    /* Orders */
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders/{order}', [OrderController::class, 'show']);
+    Route::patch('/orders/{order}', [OrderController::class, 'update']);
+    Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
 
     Route::post('/logout', [AuthController::class, 'logout']);
 });

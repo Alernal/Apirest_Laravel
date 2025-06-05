@@ -8,6 +8,7 @@ use App\Http\Requests\Products\UpdateProductRequest;
 use App\Http\Resources\ProductResorce;
 use App\Models\Products\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends BaseController
 {
@@ -36,10 +37,11 @@ class ProductController extends BaseController
                 'stock_count'
             ]));
 
-            // 3. Asociar características
-            if ($request->filled('features')) {
-                foreach ($request->features as $feature) {
-                    $product->features()->create(['feature' => $feature]);
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $path = $image->store('products', 'public');
+                    $url = Storage::url($path);
+                    $product->images()->create(['url' => $url]);
                 }
             }
 
