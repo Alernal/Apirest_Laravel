@@ -4,10 +4,12 @@ use App\Http\Controllers\AddressController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Products\ProductImageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishlistController;
+use App\Http\Controllers\WompiController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -60,6 +62,12 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::patch('/orders/{order}', [OrderController::class, 'update']);
     Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
+
+    /* WOMPI - Pasarela de pago */
+    Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);
+
+    Route::post('/pay', [PaymentController::class, 'pay']);
+
 
     Route::post('/logout', [AuthController::class, 'logout']);
 });

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cart;
+use App\Models\Products\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -32,11 +33,32 @@ class CartController extends BaseController
 
         $quantity = max((int) $request->input('quantity', 1), 1);
 
+        // Obtener el producto con su stock
+        $product = Product::find($productId);
+
+        if (!$product) {
+            return $this->sendError('Producto no encontrado', [], 404);
+        }
+
+        // Verificar si ya está en el carrito
         $existing = $cart->products()->where('product_id', $productId)->first();
 
+        // Calcular la cantidad total que tendría en el carrito
+        $currentQty = $existing ? $existing->pivot->quantity : 0;
+        $newTotalQty = $currentQty + $quantity;
+
+        if ($newTotalQty > $product->stock_count) {
+            return $this->sendError(
+                "No se puede agregar el producto '{$product->name}' al carrito. Stock disponible: {$product->stock_count}, cantidad solicitada: {$newTotalQty}.",
+                [],
+                422
+            );
+        }
+
+        // Agregar o actualizar en el carrito
         if ($existing) {
             $cart->products()->updateExistingPivot($productId, [
-                'quantity' => $existing->pivot->quantity + $quantity,
+                'quantity' => $newTotalQty,
             ]);
         } else {
             $cart->products()->attach($productId, ['quantity' => $quantity]);

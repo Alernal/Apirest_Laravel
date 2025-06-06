@@ -34,4 +34,11 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+
+    'wompi' => [
+        'public_key' => env('WOMPI_PUBLIC_KEY'),
+        'private_key' => env('WOMPI_PRIVATE_KEY'),
+        'integrity'  => env('WOMPI_INTEGRITY'),
+    ],
+
 ];
