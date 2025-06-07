@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\User\UpdateUserRequest;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -11,6 +12,13 @@ use Illuminate\Support\Str;
 
 class UserController extends BaseController
 {
+    public function index()
+    {
+        $users = User::all();
+
+        return $this->sendResponse($users, "Listado de usuarios", 200);
+    }
+
     public function update(UpdateUserRequest $request)
     {
         $user = Auth::user();

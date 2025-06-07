@@ -21,6 +21,7 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 
 
 Route::group(['middleware' => 'auth:api'], function () {
+    Route::get('users', [UserController::class, 'index']);
     Route::get('/user', [UserController::class, 'show']);
     Route::patch('/user', [UserController::class, 'update']);
     Route::post('/user/change-password', [UserController::class, 'changePassword']);
@@ -58,9 +59,8 @@ Route::group(['middleware' => 'auth:api'], function () {
 
     /* Orders */
     Route::get('/orders', [OrderController::class, 'index']);
-    Route::post('/orders', [OrderController::class, 'store']);
+    Route::post('/orders/{id}/status', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
-    Route::patch('/orders/{order}', [OrderController::class, 'update']);
     Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
 
     /* WOMPI - Pasarela de pago */

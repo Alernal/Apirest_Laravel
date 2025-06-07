@@ -43,6 +43,19 @@ return new class extends Migration
 
             $table->timestamps();
         });
+
+        Schema::create('order_status_histories', function (Blueprint $table) {
+            $table->id();
+
+            $table->foreignId('order_id')->constrained()->onDelete('cascade');
+            $table->foreignId('admin_id')->nullable()->constrained('users')->onDelete('set null'); // quién hizo el cambio
+
+            $table->string('status'); // Ej: pending, processing, shipped, completed
+            $table->text('message')->nullable(); // mensaje opcional del admin
+            $table->string('tracking_url')->nullable(); // solo si aplica (envío)
+
+            $table->timestamps(); // created_at = cuándo se hizo el cambio
+        });
     }
 
     /**
@@ -50,6 +63,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('order_status_histories');
         Schema::dropIfExists('order_product');
         Schema::dropIfExists('orders');
     }

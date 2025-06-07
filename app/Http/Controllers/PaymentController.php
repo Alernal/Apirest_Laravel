@@ -52,9 +52,12 @@ class PaymentController extends BaseController
         // Cálculo del costo de envío
         $shipping = strtolower($address->city) === 'Sincelejo' ? 0 : 30000;
 
-        // Calcular subtotal
+        // Calcular subtotal usando original_price si aplica
         $subtotal = $cart->products->sum(function ($product) {
-            return $product->price * $product->pivot->quantity;
+            $price = ($product->original_price > 0 && $product->original_price < $product->price)
+            ? $product->original_price
+            : $product->price;
+            return $price * $product->pivot->quantity;
         });
 
         $tax = $subtotal * 0.19;
@@ -70,7 +73,7 @@ class PaymentController extends BaseController
                 'reference' => $reference,
                 'payment_method' => [
                     'type' => $request->payment_method,
-                    'phone_number' => $address->phone,
+                    'phone_number' => $request->phone_number,
                 ],
                 'customer_data' => [
                     'full_name' => "{$address->first_name} {$address->last_name}",
@@ -103,17 +106,23 @@ class PaymentController extends BaseController
             foreach ($cart->products as $product) {
                 $quantity = $product->pivot->quantity;
 
+                // Determinar el precio a usar
+                $price = ($product->original_price > 0 && $product->original_price < $product->price)
+                    ? $product->original_price
+                    : $product->price;
+
                 // Asociar producto a la orden
                 $order->products()->attach($product->id, [
                     'product_name' => $product->name,
-                    'price' => $product->price,
+                    'price' => $price,
                     'quantity' => $quantity,
-                    'total' => $product->price * $quantity,
+                    'total' => $price * $quantity,
                 ]);
 
                 // Descontar del stock
                 $product->decrement('stock_count', $quantity);
             }
+
 
             DB::commit();
         } catch (\Throwable $e) {
