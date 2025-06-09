@@ -65,8 +65,7 @@ Route::group(['middleware' => 'auth:api'], function () {
 
     /* WOMPI - Pasarela de pago */
     Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);
-
-    Route::post('/pay', [PaymentController::class, 'pay']);
+    Route::post('/generate-link', [WompiController::class, 'generarLinkPago']);
 
 
     Route::post('/logout', [AuthController::class, 'logout']);

@@ -5,51 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class WompiController extends BaseController
 {
-    // public function getAcceptanceToken()
-    // {
-    //     $publicKey = config('services.wompi.public_key');
-
-    //     $response = Http::get("https://sandbox.wompi.co/v1/merchants/{$publicKey}");
-
-    //     if ($response->successful()) {
-    //         return response()->json([
-    //             'acceptance_token' => $response['data']['presigned_acceptance']['acceptance_token'],
-    //             'accept_personal_auth' => $response['data']['presigned_personal_data_auth']['acceptance_token'],
-    //             'public_key' => $publicKey,
-    //         ]);
-    //     }
-
-    //     return response()->json(['error' => 'No se pudo obtener el token'], 500);
-    // }
-
-    // public function generateSignature(Request $request)
-    // {
-    //     $validated = $request->validate([
-    //         'amount_in_cents' => 'required|integer',
-    //         'reference' => 'required|string',
-    //         'expiration_time' => 'nullable|date_format:Y-m-d\TH:i:sP', // formato ISO 8601
-    //     ]);
-
-    //     $reference = $validated['reference'];
-    //     $amount = $validated['amount_in_cents'];
-    //     $currency = 'COP';
-    //     $expiration = $validated['expiration_time'] ?? '';
-    //     $integritySecret = config('services.wompi.integrity');
-
-    //     // Concatenar en el orden exigido
-    //     $stringToSign = $reference . $amount . $currency . $expiration . $integritySecret;
-
-    //     // SHA256 puro
-    //     $signature = hash('sha256', $stringToSign);
-
-    //     return response()->json([
-    //         'signature' => $signature,
-    //     ]);
-    // }
-
     public function getAcceptanceToken(): ?string
     {
         $publicKey = config('services.wompi.public_key');
@@ -67,69 +26,6 @@ class WompiController extends BaseController
     {
         $string = $reference . $amountInCents . 'COP' . $expiration . config('services.wompi.integrity');
         return hash('sha256', $string);
-    }
-
-    public function createTransaction(array $data): array
-    {
-        $publicKey = config('services.wompi.public_key');
-        $token = $this->getAcceptanceToken();
-
-        $signature = $this->generateSignature(
-            $data['reference'],
-            $data['amount_in_cents'],
-            $data['expiration_time'] ?? ''
-        );
-
-        $payload = [
-            'acceptance_token' => $token,
-            'amount_in_cents' => $data['amount_in_cents'],
-            'currency' => 'COP',
-            'customer_email' => $data['customer_email'],
-            'payment_method' => $data['payment_method'],
-            'customer_data' => $data['customer_data'],
-            'reference' => $data['reference'],
-            'signature' => $signature,
-        ];
-
-        if (!empty($data['expiration_time'])) {
-            $payload['expiration_time'] = $data['expiration_time'];
-        }
-
-        $res = Http::withToken($publicKey)
-            ->post('https://sandbox.wompi.co/v1/transactions', $payload);
-
-        if (!$res->successful() || empty($res['data']['id'])) {
-            throw new \Exception("Error creando transacción en Wompi");
-        }
-
-        return $res['data'];
-    }
-
-    public function handleWebhook(Request $request)
-    {
-        $event = $request->input('event');
-        $data = $request->input('data');
-
-        if (!$data || empty($data['id'])) {
-            return response()->json(['error' => 'Datos de transacción inválidos'], 400);
-        }
-
-        // Buscar la orden por el transaction_id
-        $order = Order::where('transaction_id', $data['id'])->first();
-
-        if (!$order) {
-            return response()->json(['error' => 'Orden no encontrada'], 404);
-        }
-
-        // Actualizar estado de la orden según resultado
-        $status = $data['status'];
-
-        $order->update([
-            'payment_status' => $status,
-            'status' => $status === 'APPROVED' ? 'processing' : 'failed',
-        ]);
-
-        return response()->json(['received' => true]);
     }
 
     public function getTransaction($id)
@@ -152,7 +48,7 @@ class WompiController extends BaseController
             return $this->sendError('Orden no encontrada', [], 404);
         }
 
-        $user = $order->user; // Asume que tienes la relación definida en el modelo Order
+        $user = $order->user;
 
         if ($status === 'APPROVED') {
             $order->update([
@@ -160,11 +56,10 @@ class WompiController extends BaseController
                 'status' => 'processing',
             ]);
 
-            // Limpiar carrito del usuario
             if ($user) {
                 $cart = $user->cart;
                 if ($cart) {
-                    $cart->products()->detach(); // Elimina los productos del carrito
+                    $cart->products()->detach();
                 }
             }
 
@@ -199,5 +94,90 @@ class WompiController extends BaseController
             'status' => $status,
             'message' => 'Transacción en estado ' . $status,
         ]);
+    }
+
+    public function generarLinkPago(Request $request)
+    {
+        $request->validate([
+            'subtotal' => 'required|numeric|min:0',
+            'iva' => 'required|numeric|min:0',
+            'shipping' => 'required|numeric|min:0',
+            'total' => 'required|numeric|min:1'
+        ]);
+
+        $amountInCents = (int)($request['total'] * 100);
+        $ivaInCents = (int)($request['iva'] * 100);
+
+        $descripcion = "Subtotal: $" . number_format($request['subtotal'], 0, ',', '.') .
+            ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
+            ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
+
+        $payload = [
+            'name' => 'Pago en NARUE - Accesorios',
+            'description' => $descripcion,
+            'single_use' => true,
+            'collect_shipping' => false,
+            'currency' => 'COP',
+            'amount_in_cents' => $amountInCents,
+            'expires_at' => now()->addMinutes(10)->toIso8601String(),
+            'redirect_url' => env('WOMPI_REDIRECT_URL', 'http://localhost:3000/checkout/confirmacion'),
+            'image_url' => null,
+            'taxes' => [
+                [
+                    'type' => 'VAT',
+                    "percentage" => 19,
+                    'amount_in_cents' => $ivaInCents,
+                ]
+            ],
+            'customer_data' => [
+                'customer_references' => [
+                    [
+                        'label' => 'Correo electrónico',
+                        'is_required' => true
+                    ],
+                    [
+                        'label' => 'Documento de identidad',
+                        'is_required' => true
+                    ]
+                ]
+            ],
+        ];
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('WOMPI_PRIVATE_KEY'),
+                'Content-Type' => 'application/json',
+            ])->post('https://production.wompi.co/v1/payment_links', $payload);
+
+            $body = $response->json();
+
+            if ($response->successful() && isset($body['data']['id'])) {
+                $linkId = $body['data']['id'];
+
+                return response()->json([
+                    'url' => "https://checkout.wompi.co/l/{$linkId}",
+                    'payment_link_id' => $linkId,
+                    'expires_at' => $body['data']['expires_at'] ?? null,
+                ]);
+            } else {
+                Log::error('Error al generar link de Wompi', [
+                    'payload' => $payload,
+                    'status' => $response->status(),
+                    'body' => $body,
+                ]);
+
+                return response()->json([
+                    'message' => 'Error al generar el enlace de pago',
+                    'error' => $body,
+                ], 500);
+            }
+        } catch (\Exception $e) {
+            Log::error('Excepción al generar link de Wompi', ['exception' => $e]);
+
+            return response()->json([
+                'message' => 'Hubo un problema al comunicarse con Wompi',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }
