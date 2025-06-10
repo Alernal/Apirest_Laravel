@@ -25,8 +25,22 @@ class AddressController extends BaseController
         DB::beginTransaction();
 
         try {
+            $user = Auth::user();
+            $isDefault = $request->boolean('is_default');
+
+            // Si se marca como default, desactivamos todas las demás
+            if ($isDefault) {
+                $user->addresses()->update(['is_default' => false]);
+            } else {
+                // Si no se marca como default, pero el usuario no tiene ninguna default, esta se vuelve default
+                $hasDefault = $user->addresses()->where('is_default', true)->exists();
+                if (!$hasDefault) {
+                    $isDefault = true;
+                }
+            }
+
             $address = Address::create([
-                'user_id' => Auth::user()->id,
+                'user_id' => $user->id,
                 'name' => $request->name,
                 'first_name' => $request->first_name,
                 'last_name' => $request->last_name,
@@ -42,7 +56,7 @@ class AddressController extends BaseController
                 'state' => $request->state,
                 'postal_code' => $request->postal_code,
                 'country' => $request->country,
-                'is_default' => $request->boolean('is_default'),
+                'is_default' => $isDefault,
                 'notes' => $request->notes,
             ]);
 
@@ -66,7 +80,27 @@ class AddressController extends BaseController
         DB::beginTransaction();
 
         try {
+            $user = Auth::user();
+
+            $isDefault = $request->boolean('is_default', $address->is_default); // fallback al actual
+
+            // Si ahora se marca como default y antes no lo era, actualizar las demás
+            if ($isDefault && !$address->is_default) {
+                $user->addresses()->update(['is_default' => false]);
+            } else {
+                // Si no se marca como default y no hay otra, forzarla como default
+                $hasOtherDefault = $user->addresses()
+                    ->where('id', '!=', $address->id)
+                    ->where('is_default', true)
+                    ->exists();
+
+                if (!$isDefault && !$hasOtherDefault) {
+                    $isDefault = true;
+                }
+            }
+
             $address->fill($request->validated());
+            $address->is_default = $isDefault;
             $address->save();
 
             DB::commit();
@@ -78,6 +112,7 @@ class AddressController extends BaseController
             return $this->sendError('Error al actualizar la dirección: ' . $e->getMessage(), [], 500);
         }
     }
+
 
     public function destroy(Address $address)
     {
@@ -94,5 +129,24 @@ class AddressController extends BaseController
 
             return $this->sendError('Error al eliminar la dirección: ' . $e->getMessage(), [],  500);
         }
+    }
+
+    public function setDefaultAddress($id)
+    {
+        $user = Auth::user();
+
+        $address = $user->addresses()->where('id', $id)->first();
+
+        if (!$address) {
+            return $this->sendError('Dirección no encontrada.', [], 404);
+        }
+
+        // Desactivar la anterior predeterminada
+        $user->addresses()->where('is_default', true)->update(['is_default' => false]);
+
+        // Activar la nueva predeterminada
+        $address->update(['is_default' => true]);
+
+        return $this->sendResponse($address, 'Dirección establecida como predeterminada.');
     }
 }

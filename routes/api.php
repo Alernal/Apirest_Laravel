@@ -56,6 +56,7 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::get('/addresses/{address}', [AddressController::class, 'show']);
     Route::patch('/addresses/{address}', [AddressController::class, 'update']);
     Route::delete('/addresses/{address}', [AddressController::class, 'destroy']);
+    Route::patch('/addresses/{id}/default', [AddressController::class, 'setDefaultAddress']);
 
     /* Orders */
     Route::get('/orders', [OrderController::class, 'index']);

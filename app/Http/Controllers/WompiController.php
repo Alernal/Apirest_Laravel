@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\Products\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -30,71 +33,128 @@ class WompiController extends BaseController
 
     public function getTransaction($id)
     {
+        $user = Auth::user();
+
         $secretKey = config('services.wompi.private_key');
 
         $response = Http::withToken($secretKey)
             ->get("https://sandbox.wompi.co/v1/transactions/{$id}");
 
         if (!$response->successful()) {
-            return $this->sendError('No se pudo consultar la transacción', [], 500);
+            return $this->sendError('No se pudo consultar la transacción.', [], 500);
         }
 
         $data = $response['data'];
         $status = $data['status'];
 
-        $order = Order::where('transaction_id', $id)->first();
-
-        if (!$order) {
-            return $this->sendError('Orden no encontrada', [], 404);
+        if ($status !== 'APPROVED') {
+            return $this->sendResponse(['status' => $status], "Transacción no aprobada");
         }
 
-        $user = $order->user;
+        // Validar que no se haya procesado antes
+        $existingOrder = Order::where('transaction_id', $id)->first();
+        if ($existingOrder) {
+            return $this->sendResponse([
+                'status' => $status,
+                'message' => 'La orden ya fue creada previamente.',
+                'order' => $existingOrder->load('products'),
+            ], 'Orden ya existe');
+        }
 
-        if ($status === 'APPROVED') {
-            $order->update([
+        try {
+            DB::beginTransaction();
+
+            // Dirección predeterminada
+            $address = $user->addresses()->where('is_default', true)->firstOrFail();
+
+            // Obtener carrito con productos
+            $cart = $user->cart()->with('products')->first();
+
+            if (!$cart || $cart->products->isEmpty()) {
+                throw new \Exception('El carrito está vacío.');
+            }
+
+            // Preparar productos y cálculos
+            $cartItems = [];
+            $subtotal = 0;
+
+            foreach ($cart->products as $product) {
+                $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                    ? $product->original_price
+                    : $product->price;
+
+                $quantity = $product->pivot->quantity;
+
+                // Validar stock antes de crear la orden
+                if ($product->stock_count !== null && $quantity > $product->stock_count) {
+                    throw new \Exception("No hay suficiente stock para '{$product->name}'");
+                }
+
+                $totalItem = $price * $quantity;
+                $subtotal += $totalItem;
+
+                $cartItems[] = [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'price' => $price,
+                    'quantity' => $quantity,
+                    'total' => $totalItem,
+                ];
+            }
+
+            $tax = $subtotal * 0.19;
+            $shipping = $subtotal >= 150000 ? 0 : 15000;
+            $total = $subtotal + $tax + $shipping;
+
+            // Crear orden
+            $order = Order::create([
+                'user_id' => $user->id,
+                'address_id' => $address->id,
+                'payment_method' => 'wompi',
                 'payment_status' => 'approved',
                 'status' => 'processing',
+                'shipping_method' => 'standard',
+                'shipping_cost' => $shipping,
+                'tax' => $tax,
+                'subtotal' => $subtotal,
+                'total' => $total,
+                'transaction_id' => $id,
             ]);
 
-            if ($user) {
-                $cart = $user->cart;
-                if ($cart) {
-                    $cart->products()->detach();
+            foreach ($cartItems as $item) {
+                $order->products()->create($item);
+
+                // Descontar stock
+                $product = Product::find($item['product_id']);
+                if ($product && $product->stock_count !== null) {
+                    $product->decrement('stock_count', $item['quantity']);
                 }
             }
 
-            return $this->sendResponse([
-                'status' => $status,
-                'message' => 'Pago aprobado y orden actualizada.',
-            ]);
-        }
+            // Limpiar carrito
+            $cart->products()->detach();
 
-        if (in_array($status, ['REJECTED', 'DECLINED', 'ERROR'])) {
-            // Eliminar productos de la orden
-            $order->products()->detach();
-
-            // Eliminar la orden
-            $order->delete();
-
-            // Limpiar carrito también
-            if ($user) {
-                $cart = $user->cart;
-                if ($cart) {
-                    $cart->products()->detach(); // Limpiar productos
-                }
-            }
+            DB::commit();
 
             return $this->sendResponse([
-                'status' => $status,
-                'message' => 'Pago rechazado. Orden eliminada.',
-            ]);
-        }
+                'status' => 'APPROVED',
+                'order' => $order->load('products'),
+                'transaction' => $data,
+            ], 'Orden creada exitosamente.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
 
-        return $this->sendResponse([
-            'status' => $status,
-            'message' => 'Transacción en estado ' . $status,
-        ]);
+            // Log para desarrolladores
+            Log::error("Error al crear orden tras transacción aprobada [{$id}]: " . $e->getMessage());
+
+            return $this->sendError(
+                'El pago fue aprobado pero hubo un problema al generar la orden. Por favor contáctanos.',
+                ['error' => $e->getMessage()],
+                500
+            );
+        }
     }
+
 
     public function generarLinkPago(Request $request)
     {
