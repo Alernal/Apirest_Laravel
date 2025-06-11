@@ -10,7 +10,13 @@ class Order extends Model
 {
     public $guarded = [];
 
-    protected $with = ['address'];
+    protected $with = ['address', 'user', 'statusLogs'];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
 
     public function address()
     {
@@ -19,9 +25,8 @@ class Order extends Model
 
     public function statusLogs()
     {
-        return $this->hasMany(DB::raw('order_status_histories'), 'order_id');
+        return $this->hasMany(OrderStatusHistory::class, 'order_id')->with('user');
     }
-
 
     public function products()
     {

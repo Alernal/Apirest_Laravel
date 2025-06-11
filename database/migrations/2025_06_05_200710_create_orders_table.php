@@ -48,13 +48,13 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('order_id')->constrained()->onDelete('cascade');
-            $table->foreignId('admin_id')->nullable()->constrained('users')->onDelete('set null'); // quién hizo el cambio
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
 
-            $table->string('status'); // Ej: pending, processing, shipped, completed
-            $table->text('message')->nullable(); // mensaje opcional del admin
-            $table->string('tracking_url')->nullable(); // solo si aplica (envío)
+            $table->string('status');
+            $table->text('message')->nullable();
+            $table->string('tracking_url')->nullable();
 
-            $table->timestamps(); // created_at = cuándo se hizo el cambio
+            $table->timestamps();
         });
     }
 

@@ -76,10 +76,10 @@ class WompiController extends BaseController
 
             // Preparar productos y cálculos
             $cartItems = [];
-            $subtotal = 0;
+            $subtotalSinIVA = 0;
 
             foreach ($cart->products as $product) {
-                $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                $priceConIVA = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
                     ? $product->original_price
                     : $product->price;
 
@@ -90,21 +90,23 @@ class WompiController extends BaseController
                     throw new \Exception("No hay suficiente stock para '{$product->name}'");
                 }
 
-                $totalItem = $price * $quantity;
-                $subtotal += $totalItem;
+                $precioSinIVA = $priceConIVA / 1.19;
+                $totalItemSinIVA = $precioSinIVA * $quantity;
+
+                $subtotalSinIVA += $totalItemSinIVA;
 
                 $cartItems[] = [
                     'product_id' => $product->id,
                     'product_name' => $product->name,
-                    'price' => $price,
+                    'price' => $priceConIVA,
                     'quantity' => $quantity,
-                    'total' => $totalItem,
+                    'total' => $priceConIVA * $quantity,
                 ];
             }
 
-            $tax = $subtotal * 0.19;
-            $shipping = $subtotal >= 150000 ? 0 : 15000;
-            $total = $subtotal + $tax + $shipping;
+            $tax = $subtotalSinIVA * 0.19;
+            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : 15000;
+            $total = $subtotalSinIVA + $tax + $shipping;
 
             // Crear orden
             $order = Order::create([
@@ -121,8 +123,21 @@ class WompiController extends BaseController
                 'transaction_id' => $id,
             ]);
 
+            $order->statusLogs()->create([
+                'user_id' => null,
+                'status' => 'processing',
+                'message' => 'Orden generada automáticamente tras aprobación del pago.',
+                'tracking_url' => null,
+            ]);
+
+
             foreach ($cartItems as $item) {
-                $order->products()->create($item);
+                $order->products()->attach($item['product_id'], [
+                    'product_name' => $item['product_name'],
+                    'price' => $item['price'],
+                    'quantity' => $item['quantity'],
+                    'total' => $item['total'],
+                ]);
 
                 // Descontar stock
                 $product = Product::find($item['product_id']);

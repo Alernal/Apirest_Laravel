@@ -63,6 +63,8 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::post('/orders/{id}/status', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
+    Route::get('/orders/{id}/history', [OrderController::class, 'history']);
+
 
     /* WOMPI - Pasarela de pago */
     Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);

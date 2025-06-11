@@ -3,6 +3,7 @@
 namespace App\Models\Products;
 
 use App\Models\Cart;
+use App\Models\Order;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,13 @@ class Product extends Model
     {
         return $this->belongsToMany(Cart::class, 'cart_product')
             ->withPivot('quantity')
+            ->withTimestamps();
+    }
+
+     public function orders()
+    {
+        return $this->belongsToMany(Order::class)
+            ->withPivot('product_name', 'price', 'quantity', 'total')
             ->withTimestamps();
     }
 }
