@@ -26,10 +26,15 @@ class Product extends Model
             ->withTimestamps();
     }
 
-     public function orders()
+    public function orders()
     {
         return $this->belongsToMany(Order::class)
             ->withPivot('product_name', 'price', 'quantity', 'total')
             ->withTimestamps();
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(ProductReview::class);
     }
 }

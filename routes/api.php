@@ -4,9 +4,9 @@ use App\Http\Controllers\AddressController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\OrderController;
-use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Products\ProductImageController;
+use App\Http\Controllers\Products\ProductReviewController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\WompiController;
@@ -17,6 +17,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+Route::get('/products/{product}/reviews', [ProductReviewController::class, 'index']);
 
 
 
@@ -37,6 +38,12 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::post('images', [ProductImageController::class, 'store']);
         Route::delete('images/{image}', [ProductImageController::class, 'destroy']);
     });
+
+    // Product Reviews
+    Route::post('/reviews', [ProductReviewController::class, 'store']);
+    Route::patch('/reviews/{review}', [ProductReviewController::class, 'update']);
+    Route::put('/reviews/{review}', [ProductReviewController::class, 'update']);
+    Route::delete('/reviews/{review}', [ProductReviewController::class, 'destroy']);
 
     /* Wishlist */
     Route::get('/wishlist', [WishlistController::class, 'index']);

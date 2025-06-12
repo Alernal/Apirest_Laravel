@@ -17,19 +17,28 @@ return new class extends Migration
             $table->string('name');
             $table->decimal('price', 10, 2);
             $table->decimal('original_price', 10, 2)->nullable();
-            $table->string('size', 5)->nullable();
-            $table->string('color', 20)->nullable();
+            $table->string('size', 10)->nullable();
+            $table->string('material', 50)->nullable();
             $table->text('description')->nullable();
             $table->boolean('in_stock')->default(true);
             $table->integer('stock_count')->default(0);
+            $table->string('category', 50)->nullable();
             $table->timestamps();
         });
 
-        // Tabla: product_images
         Schema::create('product_images', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_id')->constrained()->onDelete('cascade');
             $table->string('url');
+            $table->timestamps();
+        });
+
+        Schema::create('product_reviews', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->tinyInteger('rating')->unsigned();
+            $table->text('comment')->nullable();
             $table->timestamps();
         });
     }

@@ -29,11 +29,12 @@ class UpdateProductRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:255'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'original_price' => ['nullable', 'numeric', 'min:0'],
-            'size' => ['nullable', 'string', 'max:5'],
-            'color' => ['nullable', 'string', 'max:20'],
+            'size' => ['nullable', 'string', 'max:10'],
+            'material' => ['nullable', 'string', 'max:50'],
             'description' => ['nullable', 'string'],
             'in_stock' => ['sometimes', 'boolean'],
             'stock_count' => ['sometimes', 'integer', 'min:0'],
+            'category' => ['nullable', 'string', 'max:50'],
         ];
     }
 }

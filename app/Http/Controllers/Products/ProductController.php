@@ -31,10 +31,11 @@ class ProductController extends BaseController
                 'price',
                 'original_price',
                 'size',
-                'color',
+                'material',
                 'description',
                 'in_stock',
-                'stock_count'
+                'stock_count',
+                'category'
             ]));
 
             if ($request->hasFile('images')) {
@@ -72,10 +73,11 @@ class ProductController extends BaseController
                 'price',
                 'original_price',
                 'size',
-                'color',
+                'material',
                 'description',
                 'in_stock',
-                'stock_count'
+                'stock_count',
+                'category'
             ]))->save();
 
             DB::commit();
