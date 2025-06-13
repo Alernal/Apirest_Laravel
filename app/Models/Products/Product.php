@@ -12,7 +12,7 @@ class Product extends Model
 {
     protected $guarded = [];
 
-    protected $with = ['images'];
+    protected $with = ['images', 'reviews'];
 
     public function images(): HasMany
     {

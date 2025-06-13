@@ -15,6 +15,8 @@ class ProductReview extends Model
         'comment',
     ];
 
+    protected $with = "user";
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
