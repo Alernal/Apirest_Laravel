@@ -11,11 +11,12 @@ use Illuminate\Support\Facades\Auth;
 
 class ProductReviewController extends BaseController
 {
-    public function index(Product $product)
+    public function index()
     {
-        $reviews = $product->reviews()->with('user:id,name')->latest()->get();
+        $reviews = ProductReview::with(['user', 'product'])
+            ->latest()->get();
 
-        return $this->sendResponse($reviews, 'Lista de reseñas cargada correctamente.');
+        return $this->sendResponse($reviews, 'Lista de todas las reseñas cargada correctamente.');
     }
 
     public function store(Request $request)

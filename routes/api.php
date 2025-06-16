@@ -17,8 +17,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
-Route::get('/products/{product}/reviews', [ProductReviewController::class, 'index']);
-
+Route::get('/reviews', [ProductReviewController::class, 'index']);
 
 
 Route::group(['middleware' => 'auth:api'], function () {
