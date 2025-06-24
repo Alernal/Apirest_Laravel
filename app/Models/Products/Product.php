@@ -4,12 +4,15 @@ namespace App\Models\Products;
 
 use App\Models\Cart;
 use App\Models\Order;
+use App\Models\Traits\HasSearch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
+    use HasSearch;
+
     protected $guarded = [];
 
     protected $with = ['images', 'reviews'];
@@ -36,5 +39,10 @@ class Product extends Model
     public function reviews()
     {
         return $this->hasMany(ProductReview::class);
+    }
+
+    public function searchFields()
+    {
+        return ['name', 'price', 'description'];
     }
 }

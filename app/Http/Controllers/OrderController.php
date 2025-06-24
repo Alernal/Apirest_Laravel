@@ -18,9 +18,9 @@ class OrderController extends BaseController
         $user = Auth::user();
 
         if ($user->role === 'admin') {
-            $orders = Order::paginate();
+            $orders = Order::search()->paginate();
         } else {
-            $orders = Order::where('user_id', $user->id)->paginate();
+            $orders = Order::where('user_id', $user->id)->search()->paginate();
         }
 
         return $this->sendResponse(OrderResource::collection($orders), 'Lista de ordenes obtenida exitosamente.');

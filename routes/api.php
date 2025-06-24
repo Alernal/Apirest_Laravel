@@ -7,6 +7,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Products\ProductImageController;
 use App\Http\Controllers\Products\ProductReviewController;
+use App\Http\Controllers\SubscriberController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\WompiController;
@@ -18,7 +19,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::get('/reviews', [ProductReviewController::class, 'index']);
-
+Route::post('/subscribers', [SubscriberController::class, 'store']);
 
 Route::group(['middleware' => 'auth:api'], function () {
     Route::get('users', [UserController::class, 'index']);

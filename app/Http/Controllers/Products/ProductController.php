@@ -58,7 +58,7 @@ class ProductController extends BaseController
             }
         }
 
-        $products = $query->with('images', 'reviews')->paginate(12);
+        $products = $query->with('images', 'reviews')->search()->paginate(12);
 
         return $this->sendResponse( new ProductResource($products), 'Lista de productos obtenida exitosamente.');
     }

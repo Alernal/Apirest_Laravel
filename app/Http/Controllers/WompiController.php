@@ -118,7 +118,7 @@ class WompiController extends BaseController
                 'shipping_method' => 'standard',
                 'shipping_cost' => $shipping,
                 'tax' => $tax,
-                'subtotal' => $subtotal,
+                'subtotal' => $subtotalSinIVA,
                 'total' => $total,
                 'transaction_id' => $id,
             ]);
@@ -173,12 +173,61 @@ class WompiController extends BaseController
 
     public function generarLinkPago(Request $request)
     {
+        $user = Auth::user();
+
         $request->validate([
             'subtotal' => 'required|numeric|min:0',
             'iva' => 'required|numeric|min:0',
             'shipping' => 'required|numeric|min:0',
             'total' => 'required|numeric|min:1'
         ]);
+
+        // VALIDACION
+        $cart = $user->cart()->with('products')->first();
+        if (!$cart || $cart->products->isEmpty()) {
+            return response()->json(['message' => 'El carrito está vacío.'], 422);
+        }
+
+        // Validar dirección
+        $address = $user->addresses()->where('is_default', true)->first();
+        if (!$address) {
+            return response()->json(['message' => 'No tienes una dirección predeterminada configurada.'], 422);
+        }
+
+        // Calcular valores reales desde el carrito
+        $subtotalSinIVA = 0;
+        foreach ($cart->products as $product) {
+            $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                ? $product->original_price
+                : $product->price;
+
+            $quantity = $product->pivot->quantity;
+
+            if ($product->stock_count !== null && $quantity > $product->stock_count) {
+                return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
+            }
+
+            $precioSinIVA = $price / 1.19;
+            $subtotalSinIVA += $precioSinIVA * $quantity;
+        }
+
+        $tax = round($subtotalSinIVA * 0.19, 2);
+        $shipping = $subtotalSinIVA >= 126050.42 ? 0 : 15000;
+        $total = $subtotalSinIVA + $tax + $shipping;
+
+        // Comparar con lo recibido en el request
+        if (
+            round($request->subtotal, 2) != round($subtotalSinIVA, 2) ||
+            round($request->iva, 2) != round($tax, 2) ||
+            round($request->shipping, 2) != round($shipping, 2) ||
+            round($request->total, 2) != round($total, 2)
+        ) {
+            return response()->json([
+                'message' => 'Los valores del pago no coinciden con los calculados en el servidor.',
+                'calculado' => compact('subtotalSinIVA', 'tax', 'shipping', 'total'),
+                'enviado' => $request->only(['subtotal', 'iva', 'shipping', 'total'])
+            ], 422);
+        }
 
         $amountInCents = (int)($request['total'] * 100);
         $ivaInCents = (int)($request['iva'] * 100);
