@@ -15,6 +15,7 @@ class UserController extends BaseController
     public function index()
     {
         $users = User::all();
+        $users->load(['addresses', 'cart', 'orders']);
 
         return $this->sendResponse($users, "Listado de usuarios", 200);
     }
@@ -29,12 +30,19 @@ class UserController extends BaseController
         return $this->sendResponse($user, 'Información del usuario actualizada correctamente');
     }
 
-    public function show()
+    public function show($id)
     {
-        $user = Auth::user();
+        $user = User::with([
+            'addresses',
+            'orders',
+            'cart.products' => function ($query) {
+                $query->select('products.*'); // campos del producto
+            }
+        ])->findOrFail($id);
 
         return $this->sendResponse($user, 'Información del usuario');
     }
+
 
     public function changePassword(Request $request)
     {
