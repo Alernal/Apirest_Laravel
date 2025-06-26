@@ -33,6 +33,17 @@ class WompiController extends BaseController
 
     public function getTransaction($id)
     {
+        $caribbeanDepartments = [
+            'atlántico',
+            'bolívar',
+            'cesar',
+            'córdoba',
+            'la guajira',
+            'magdalena',
+            'sucre',
+            'san andrés y providencia',
+        ];
+
         $user = Auth::user();
 
         $secretKey = config('services.wompi.private_key');
@@ -104,8 +115,11 @@ class WompiController extends BaseController
                 ];
             }
 
+            $department = strtolower($address->state ?? '');
+            $baseShipping  = in_array($department, $caribbeanDepartments) ? 9000 : 15000;
+
             $tax = $subtotalSinIVA * 0.19;
-            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : 15000;
+            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
             $total = $subtotalSinIVA + $tax + $shipping;
 
             // Crear orden
