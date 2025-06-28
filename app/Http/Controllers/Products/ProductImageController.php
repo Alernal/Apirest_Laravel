@@ -12,20 +12,54 @@ class ProductImageController extends BaseController
 {
     public function store(Request $request, Product $product)
     {
-        $request->validate([
+        $validated = $request->validate([
             'images' => 'required|array',
             'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
         ]);
 
-        foreach ($request->file('images') as $image) {
-            // Guardar la imagen en storage/app/public/products
-            $path = $image->store('products', 'public');
+        $failedImages = [];
 
-            // Obtener la URL pública
-            $url = Storage::url($path);
+        foreach ($request->file('images') as $index => $image) {
+            if (!$image->isValid()) {
+                $errorMessage = $image->getErrorMessage();
+                $originalName = $image->getClientOriginalName();
 
-            // Guardar en DB
-            $product->images()->create(['url' => $url]);
+                Log::error("Falló la carga de imagen [{$index}] - {$originalName}: {$errorMessage}");
+
+                $failedImages[] = [
+                    'index' => $index,
+                    'name' => $originalName,
+                    'error' => $errorMessage,
+                ];
+
+                continue; // opcional: omitir esta imagen y seguir con las demás
+            }
+
+            try {
+                // Guardar la imagen en storage/app/public/products
+                $path = $image->store('products', 'public');
+                $url = Storage::url($path);
+
+                // Guardar en DB
+                $product->images()->create(['url' => $url]);
+            } catch (\Exception $e) {
+                Log::error("Error al guardar imagen [{$index}] - {$image->getClientOriginalName()}: " . $e->getMessage());
+
+                $failedImages[] = [
+                    'index' => $index,
+                    'name' => $image->getClientOriginalName(),
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        if (count($failedImages)) {
+            return response()->json([
+                'message' => 'Algunas imágenes no se pudieron subir.',
+                'errors' => [
+                    'images' => $failedImages
+                ]
+            ], 422);
         }
 
         return $this->sendResponse([], 'Imágenes subidas correctamente.', 201);
