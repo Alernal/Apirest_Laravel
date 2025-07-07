@@ -25,6 +25,8 @@ class AuthController extends BaseController
 
         $token = JWTAuth::fromUser($user);
 
+        $user->sendEmailVerificationNotification();
+
         return $this->sendResponse(['user' => $user, 'token' => $token], 'Usuario registrado con éxito', 201);
     }
 

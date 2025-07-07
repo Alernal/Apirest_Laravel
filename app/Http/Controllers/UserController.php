@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\User\UpdateUserRequest;
 use App\Models\User;
+use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -88,5 +89,67 @@ class UserController extends BaseController
         $user->save();
 
         return $this->sendResponse($user, 'Imagen de perfil actualizada correctamente');
+    }
+
+    public function verifyEmail(Request $request, $id, $hash)
+    {
+        $user = User::findOrFail($id);
+
+        if (! hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
+            return view('auth.verification.message', [
+                'title' => 'Verificación Fallida',
+                'message' => 'El enlace de verificación no es válido.',
+                'status' => 'error',
+            ]);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            if (! $user->is_verified) {
+                $user->is_verified = true;
+                $user->save();
+            }
+
+            return view('auth.verification.message', [
+                'title' => 'Correo ya verificado',
+                'message' => 'Este correo electrónico ya fue verificado previamente.',
+                'status' => 'info',
+            ]);
+        }
+
+        $user->markEmailAsVerified();
+        $user->is_verified = true;
+        $user->save();
+        event(new Verified($user));
+
+        return view('auth.verification.message', [
+            'title' => 'Correo verificado',
+            'message' => 'Tu correo ha sido verificado exitosamente.',
+            'status' => 'success',
+        ]);
+    }
+
+    public function resendVerificationEmail(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+        ]);
+
+        $user = User::where('email', $request->input('email'))->first();
+
+        if ($user->hasVerifiedEmail()) {
+            return view('auth.verification.message', [
+                'title' => 'Ya verificado',
+                'message' => 'Este correo ya fue verificado.',
+                'status' => 'info',
+            ]);
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return view('auth.verification.message', [
+            'title' => 'Correo reenviado',
+            'message' => 'Se ha enviado un nuevo enlace de verificación a tu correo.',
+            'status' => 'success',
+        ]);
     }
 }
