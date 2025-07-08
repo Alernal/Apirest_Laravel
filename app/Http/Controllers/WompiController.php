@@ -173,12 +173,39 @@ class WompiController extends BaseController
         } catch (\Throwable $e) {
             DB::rollBack();
 
+            try {
+                // Crear orden mínima para trazabilidad
+                $fallbackOrder = Order::create([
+                    'user_id' => $user->id,
+                    'payment_method' => 'wompi',
+                    'payment_status' => 'approved',
+                    'status' => 'error',
+                    'shipping_method' => null,
+                    'shipping_cost' => 0,
+                    'tax' => 0,
+                    'subtotal' => 0,
+                    'total' => 0,
+                    'transaction_id' => $id,
+                    'note' => 'Orden generada automáticamente tras fallo en el procesamiento. Se requiere revisión manual.',
+                ]);
+
+                $fallbackOrder->statusLogs()->create([
+                    'user_id' => null,
+                    'status' => 'error',
+                    'message' => 'Orden generada con error. Revisar detalles manualmente.',
+                    'tracking_url' => null,
+                ]);
+            } catch (\Throwable $e2) {
+                // Si incluso la orden mínima falla, se loguea como fallo crítico
+                Log::critical("Fallo crítico: no se pudo crear orden fallback para transacción [{$id}]: " . $e2->getMessage());
+            }
+
             // Log para desarrolladores
             Log::error("Error al crear orden tras transacción aprobada [{$id}]: " . $e->getMessage());
 
             return $this->sendError(
-                'El pago fue aprobado pero hubo un problema al generar la orden. Por favor contáctanos.',
-                ['error' => $e->getMessage()],
+                'Tu pago fue aprobado, pero hubo un error al generar tu orden. Hemos registrado el incidente. Por favor guarda este ID de transacción para cualquier reclamo: ' . $id,
+                ['transaction_id' => $id, 'error' => $e->getMessage()],
                 500
             );
         }

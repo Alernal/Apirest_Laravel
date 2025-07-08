@@ -104,7 +104,7 @@ class UserController extends BaseController
         }
 
         if ($user->hasVerifiedEmail()) {
-            if (! $user->is_verified) {
+            if (!$user->is_verified) {
                 $user->is_verified = true;
                 $user->save();
             }
@@ -137,19 +137,16 @@ class UserController extends BaseController
         $user = User::where('email', $request->input('email'))->first();
 
         if ($user->hasVerifiedEmail()) {
-            return view('auth.verification.message', [
-                'title' => 'Ya verificado',
-                'message' => 'Este correo ya fue verificado.',
-                'status' => 'info',
-            ]);
+            if (!$user->is_verified) {
+                $user->is_verified = true;
+                $user->save();
+            }
+
+            return $this->sendResponse(null, 'Este correo ya fue verificado.', 200);
         }
 
         $user->sendEmailVerificationNotification();
 
-        return view('auth.verification.message', [
-            'title' => 'Correo reenviado',
-            'message' => 'Se ha enviado un nuevo enlace de verificación a tu correo.',
-            'status' => 'success',
-        ]);
+        return $this->sendResponse(null, 'Se ha enviado un nuevo enlace de verificación a tu correo.', 200);
     }
 }

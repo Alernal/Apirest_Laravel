@@ -27,6 +27,8 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::get('/reviews', [ProductReviewController::class, 'index']);
 Route::post('/subscribers', [SubscriberController::class, 'store']);
 
+Route::post('/email/resend', [UserController::class, 'resendVerificationEmail']);
+
 Route::group(['middleware' => 'auth:api'], function () {
     /* RUTAS SOLO PARA ADMINISTRADOR */
     Route::group(['middleware' => 'is.admin'], function () {
@@ -46,7 +48,6 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
 
         /* WOMPI - Pasarela de pago */
-        Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);
         Route::post('/generate-link', [WompiController::class, 'generarLinkPago']);
     });
 
@@ -55,7 +56,7 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::post('/user/change-password', [UserController::class, 'changePassword']);
     Route::post('/user/profile-image', [UserController::class, 'uploadProfileImage']);
 
-
+    Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);
 
     // Product Reviews
     Route::post('/reviews', [ProductReviewController::class, 'store']);
