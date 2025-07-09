@@ -14,7 +14,7 @@ class ProductImageController extends BaseController
     {
         $validated = $request->validate([
             'images' => 'required|array',
-            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
+            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:51200',
         ]);
 
         $failedImages = [];

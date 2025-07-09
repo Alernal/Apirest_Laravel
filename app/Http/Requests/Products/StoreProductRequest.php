@@ -38,7 +38,7 @@ class StoreProductRequest extends FormRequest
             'category' => 'nullable|string|max:50',
 
             'images' => 'nullable|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg,webp|max:51200',
 
         ];
     }
