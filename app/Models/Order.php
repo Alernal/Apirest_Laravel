@@ -13,7 +13,7 @@ class Order extends Model
 
     public $guarded = [];
 
-    protected $with = ['address', 'user', 'statusLogs'];
+    protected $with = ['address', 'user', 'statusLogs', 'orderItems'];
 
     public function user()
     {
@@ -37,6 +37,12 @@ class Order extends Model
             ->withPivot('product_name', 'price', 'quantity', 'total')
             ->withTimestamps();
     }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderProduct::class, 'order_id');
+    }
+
 
     public function searchFields()
     {

@@ -60,7 +60,7 @@ class ProductController extends BaseController
 
         $products = $query->with('images', 'reviews')->search()->paginate(12);
 
-        return $this->sendResponse( new ProductResource($products), 'Lista de productos obtenida exitosamente.');
+        return $this->sendResponse(new ProductResource($products), 'Lista de productos obtenida exitosamente.');
     }
 
 
@@ -140,6 +140,12 @@ class ProductController extends BaseController
         DB::beginTransaction();
 
         try {
+            // Eliminar imagen física si existe
+            if ($product->image_url) {
+                $path = str_replace('/storage/', '', $product->image_url); // Obtener ruta relativa
+                Storage::disk('public')->delete($path); // Borrar archivo
+            }
+
             // Eliminar el producto
             $product->delete();
 
