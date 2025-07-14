@@ -63,6 +63,23 @@ class ProductController extends BaseController
         return $this->sendResponse(new ProductResource($products), 'Lista de productos obtenida exitosamente.');
     }
 
+    public function getByIds(Request $request)
+    {
+        $ids = $request->input('ids');
+
+        if (!is_array($ids) || empty($ids)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se proporcionaron IDs válidos.',
+            ], 400);
+        }
+
+        $products = Product::whereIn('id', $ids)
+            ->with(['images', 'reviews'])
+            ->get();
+
+        return $this->sendResponse(ProductResource::collection($products), 'Productos obtenidos exitosamente.');
+    }
 
     public function store(StoreProductRequest $request)
     {
@@ -104,6 +121,23 @@ class ProductController extends BaseController
     public function show(Product $product)
     {
         return $this->sendResponse(ProductResource::make($product), 'Producto obtenido exitosamente.');
+    }
+
+    public function slug($slug)
+    {
+        $product = Product::where('slug', $slug)->first();
+
+        if (!$product) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Producto no encontrado.',
+            ], 404);
+        }
+
+        return $this->sendResponse(
+            ProductResource::make($product),
+            'Producto obtenido exitosamente.'
+        );
     }
 
     public function update(UpdateProductRequest $request, Product $product)

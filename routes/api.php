@@ -12,18 +12,14 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\WompiController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\URL;
-use Illuminate\Auth\Events\Verified;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/products', [ProductController::class, 'index']);
+Route::get('/products/by-ids', [ProductController::class, 'getByIds']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+Route::get('/products/slug/{slug}', [ProductController::class, 'slug']);
 Route::get('/reviews', [ProductReviewController::class, 'index']);
 Route::post('/subscribers', [SubscriberController::class, 'store']);
 
