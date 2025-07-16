@@ -60,6 +60,24 @@ class ProductController extends BaseController
 
         $products = $query->with('images', 'reviews')->search()->paginate(12);
 
+        $products->getCollection()->transform(function ($product) {
+            $product->images->transform(function ($image) {
+                $originalPath = str_replace('/storage/', '', $image->url);
+                $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
+                $optimizedPath = 'products/optimized/' . $filename;
+
+                $image->url = Storage::url(
+                    Storage::disk('public')->exists($optimizedPath)
+                        ? $optimizedPath
+                        : $originalPath
+                );
+
+                return $image;
+            });
+
+            return $product;
+        });
+
         return $this->sendResponse(new ProductResource($products), 'Lista de productos obtenida exitosamente.');
     }
 
@@ -77,6 +95,24 @@ class ProductController extends BaseController
         $products = Product::whereIn('id', $ids)
             ->with(['images', 'reviews'])
             ->get();
+
+        $products->transform(function ($product) {
+            $product->images->transform(function ($image) {
+                $originalPath = str_replace('/storage/', '', $image->url);
+                $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
+                $optimizedPath = 'products/optimized/' . $filename;
+
+                $image->url = Storage::url(
+                    Storage::disk('public')->exists($optimizedPath)
+                        ? $optimizedPath
+                        : $originalPath
+                );
+
+                return $image;
+            });
+
+            return $product;
+        });
 
         return $this->sendResponse(ProductResource::collection($products), 'Productos obtenidos exitosamente.');
     }
@@ -120,12 +156,30 @@ class ProductController extends BaseController
 
     public function show(Product $product)
     {
+        $product->load('images', 'reviews');
+
+        // Sobrescribimos las URLs con las optimizadas si existen
+        $product->images->transform(function ($image) {
+            $originalPath = str_replace('/storage/', '', $image->url);
+            $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
+            $optimizedPath = 'products/optimized/' . $filename;
+
+            $finalPath = Storage::disk('public')->exists($optimizedPath)
+                ? $optimizedPath
+                : $originalPath;
+
+            $image->url = Storage::url($finalPath);
+            return $image;
+        });
+
         return $this->sendResponse(ProductResource::make($product), 'Producto obtenido exitosamente.');
     }
 
     public function slug($slug)
     {
-        $product = Product::where('slug', $slug)->first();
+        $product = Product::where('slug', $slug)
+            ->with(['images', 'reviews'])
+            ->first();
 
         if (!$product) {
             return response()->json([
@@ -133,6 +187,20 @@ class ProductController extends BaseController
                 'message' => 'Producto no encontrado.',
             ], 404);
         }
+
+        // Reemplazar imágenes por sus versiones .webp si existen
+        $product->images->transform(function ($image) {
+            $originalPath = str_replace('/storage/', '', $image->url);
+            $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
+            $optimizedPath = 'products/optimized/' . $filename;
+
+            $finalPath = Storage::disk('public')->exists($optimizedPath)
+                ? $optimizedPath
+                : $originalPath;
+
+            $image->url = Storage::url($finalPath);
+            return $image;
+        });
 
         return $this->sendResponse(
             ProductResource::make($product),
