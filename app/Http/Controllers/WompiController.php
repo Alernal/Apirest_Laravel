@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\OrderCreated;
+use App\Mail\OrderFallbackCreated;
 use App\Models\Order;
 use App\Models\Products\Product;
 use Illuminate\Http\Request;
@@ -9,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class WompiController extends BaseController
 {
@@ -137,6 +140,8 @@ class WompiController extends BaseController
                 'transaction_id' => $id,
             ]);
 
+            Mail::to($user->email)->queue(new OrderCreated($order));
+
             $order->statusLogs()->create([
                 'user_id' => null,
                 'status' => 'processing',
@@ -188,6 +193,8 @@ class WompiController extends BaseController
                     'transaction_id' => $id,
                     'note' => 'Orden generada automáticamente tras fallo en el procesamiento. Se requiere revisión manual.',
                 ]);
+
+                Mail::to($user->email)->queue(new OrderFallbackCreated($fallbackOrder));
 
                 $fallbackOrder->statusLogs()->create([
                     'user_id' => null,

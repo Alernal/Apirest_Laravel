@@ -9,7 +9,10 @@ use App\Http\Resources\ProductResource;
 use App\Models\Products\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Intervention\Image\Drivers\Gd\Driver;
+use Intervention\Image\ImageManager;
 
 class ProductController extends BaseController
 {
@@ -58,25 +61,13 @@ class ProductController extends BaseController
             }
         }
 
-        $products = $query->with('images', 'reviews')->search()->paginate(12);
+        $shouldPaginate = $request->boolean('paginate', true);
 
-        $products->getCollection()->transform(function ($product) {
-            $product->images->transform(function ($image) {
-                $originalPath = str_replace('/storage/', '', $image->url);
-                $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
-                $optimizedPath = 'products/optimized/' . $filename;
-
-                $image->url = Storage::url(
-                    Storage::disk('public')->exists($optimizedPath)
-                        ? $optimizedPath
-                        : $originalPath
-                );
-
-                return $image;
-            });
-
-            return $product;
-        });
+        if ($shouldPaginate) {
+            $products = $query->with('images', 'reviews')->search()->paginate(12);
+        } else {
+            $products = $query->with('images', 'reviews')->search()->get();
+        }
 
         return $this->sendResponse(new ProductResource($products), 'Lista de productos obtenida exitosamente.');
     }
@@ -95,24 +86,6 @@ class ProductController extends BaseController
         $products = Product::whereIn('id', $ids)
             ->with(['images', 'reviews'])
             ->get();
-
-        $products->transform(function ($product) {
-            $product->images->transform(function ($image) {
-                $originalPath = str_replace('/storage/', '', $image->url);
-                $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
-                $optimizedPath = 'products/optimized/' . $filename;
-
-                $image->url = Storage::url(
-                    Storage::disk('public')->exists($optimizedPath)
-                        ? $optimizedPath
-                        : $originalPath
-                );
-
-                return $image;
-            });
-
-            return $product;
-        });
 
         return $this->sendResponse(ProductResource::collection($products), 'Productos obtenidos exitosamente.');
     }
@@ -137,10 +110,35 @@ class ProductController extends BaseController
             ]));
 
             if ($request->hasFile('images')) {
+                $manager = new ImageManager(new Driver());
+
                 foreach ($request->file('images') as $image) {
-                    $path = $image->store('products', 'public');
-                    $url = Storage::url($path);
-                    $product->images()->create(['url' => $url]);
+                    // Crear nombre único con hash
+                    $hash = md5_file($image->getRealPath());
+                    $filename = "product_{$product->id}_{$hash}.webp";
+
+                    // Ruta de guardado
+                    $relativePath = "products/{$filename}";
+                    $absolutePath = storage_path("app/public/{$relativePath}");
+
+                    // Crear directorio si no existe
+                    if (!file_exists(dirname($absolutePath))) {
+                        mkdir(dirname($absolutePath), 0755, true);
+                    }
+
+                    // Convertir a WebP
+                    try {
+                        $manager->read($image->getRealPath())
+                            ->scaleDown(width: 800)
+                            ->toWebp(quality: 75)
+                            ->save($absolutePath);
+
+                        // Guardar URL pública
+                        $url = Storage::url($relativePath);
+                        $product->images()->create(['url' => $url]);
+                    } catch (\Throwable $e) {
+                        Log::error("Error al convertir imagen a WebP: " . $e->getMessage());
+                    }
                 }
             }
 
@@ -158,20 +156,6 @@ class ProductController extends BaseController
     {
         $product->load('images', 'reviews');
 
-        // Sobrescribimos las URLs con las optimizadas si existen
-        $product->images->transform(function ($image) {
-            $originalPath = str_replace('/storage/', '', $image->url);
-            $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
-            $optimizedPath = 'products/optimized/' . $filename;
-
-            $finalPath = Storage::disk('public')->exists($optimizedPath)
-                ? $optimizedPath
-                : $originalPath;
-
-            $image->url = Storage::url($finalPath);
-            return $image;
-        });
-
         return $this->sendResponse(ProductResource::make($product), 'Producto obtenido exitosamente.');
     }
 
@@ -187,20 +171,6 @@ class ProductController extends BaseController
                 'message' => 'Producto no encontrado.',
             ], 404);
         }
-
-        // Reemplazar imágenes por sus versiones .webp si existen
-        $product->images->transform(function ($image) {
-            $originalPath = str_replace('/storage/', '', $image->url);
-            $filename = pathinfo($originalPath, PATHINFO_FILENAME) . '.webp';
-            $optimizedPath = 'products/optimized/' . $filename;
-
-            $finalPath = Storage::disk('public')->exists($optimizedPath)
-                ? $optimizedPath
-                : $originalPath;
-
-            $image->url = Storage::url($finalPath);
-            return $image;
-        });
 
         return $this->sendResponse(
             ProductResource::make($product),

@@ -6,7 +6,10 @@ use App\Http\Controllers\BaseController;
 use App\Models\Products\Product;
 use App\Models\Products\ProductImage;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Intervention\Image\Drivers\Gd\Driver;
+use Intervention\Image\ImageManager;
 
 class ProductImageController extends BaseController
 {
@@ -18,6 +21,7 @@ class ProductImageController extends BaseController
         ]);
 
         $failedImages = [];
+        $manager = new ImageManager(new Driver());
 
         foreach ($request->file('images') as $index => $image) {
             if (!$image->isValid()) {
@@ -32,18 +36,32 @@ class ProductImageController extends BaseController
                     'error' => $errorMessage,
                 ];
 
-                continue; // opcional: omitir esta imagen y seguir con las demás
+                continue;
             }
 
             try {
-                // Guardar la imagen en storage/app/public/products
-                $path = $image->store('products', 'public');
-                $url = Storage::url($path);
+                // Crear nombre único con hash
+                $hash = md5_file($image->getRealPath());
+                $filename = "product_{$product->id}_{$hash}.webp";
 
-                // Guardar en DB
+                $relativePath = "products/{$filename}";
+                $absolutePath = storage_path("app/public/{$relativePath}");
+
+                if (!file_exists(dirname($absolutePath))) {
+                    mkdir(dirname($absolutePath), 0755, true);
+                }
+
+                // Convertir a WebP
+                $manager->read($image->getRealPath())
+                    ->scaleDown(width: 800)
+                    ->toWebp(quality: 75)
+                    ->save($absolutePath);
+
+                // Guardar URL en la base de datos
+                $url = Storage::url($relativePath);
                 $product->images()->create(['url' => $url]);
             } catch (\Exception $e) {
-                Log::error("Error al guardar imagen [{$index}] - {$image->getClientOriginalName()}: " . $e->getMessage());
+                Log::error("Error al procesar imagen [{$index}] - {$image->getClientOriginalName()}: " . $e->getMessage());
 
                 $failedImages[] = [
                     'index' => $index,
