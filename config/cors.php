@@ -6,7 +6,7 @@ return [
     'allowed_methods'   => ['*'],
 
     'allowed_origins'   => [
-        'https://nurae.alernal.com.co',
+        'https://nurae.com.co',
         'http://localhost:5173', // ← SIN SLASH FINAL
     ],
 

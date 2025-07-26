@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Cart;
 use App\Models\Products\Product;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class CartController extends BaseController
 {
@@ -25,9 +27,29 @@ class CartController extends BaseController
         return $this->sendResponse($products, 'Carrito cargado correctamente');
     }
 
+    private function carritoBloqueado($userId)
+    {
+        $bloqueo = Cache::get("link_pago_bloqueado_user_{$userId}");
+
+        if ($bloqueo && isset($bloqueo['expires_at'])) {
+            return [
+                'activo' => true,
+                'expires_at' => Carbon::parse($bloqueo['expires_at'])->toIso8601String()
+            ];
+        }
+
+        return ['activo' => false];
+    }
+
     public function store($productId, Request $request)
     {
         $user = Auth::user();
+
+        $bloqueo = $this->carritoBloqueado($user->id);
+        if ($bloqueo['activo']) {
+            return $this->sendError("El carrito está bloqueado por un pago en proceso. Intenta nuevamente después de las {$bloqueo['expires_at']}.", [], 403);
+        }
+
 
         $cart = Cart::firstOrCreate(['user_id' => $user->id]);
 
@@ -70,6 +92,11 @@ class CartController extends BaseController
     public function decrement($productId)
     {
         $user = Auth::user();
+        $bloqueo = $this->carritoBloqueado($user->id);
+        if ($bloqueo['activo']) {
+            return $this->sendError("El carrito está bloqueado por un pago en proceso. Intenta nuevamente después de las {$bloqueo['expires_at']}.", [], 403);
+        }
+
         $cart = Cart::firstOrCreate(['user_id' => $user->id]);
 
         $product = $cart->products()->where('product_id', $productId)->first();
@@ -95,6 +122,12 @@ class CartController extends BaseController
     public function clear()
     {
         $user = Auth::user();
+
+        $bloqueo = $this->carritoBloqueado($user->id);
+        if ($bloqueo['activo']) {
+            return $this->sendError("El carrito está bloqueado por un pago en proceso. Intenta nuevamente después de las {$bloqueo['expires_at']}.", [], 403);
+        }
+
         $cart = Cart::firstOrCreate(['user_id' => $user->id]);
 
         $cart->products()->detach(); // Elimina todos los productos
@@ -105,6 +138,11 @@ class CartController extends BaseController
     public function destroy($productId)
     {
         $user = Auth::user();
+
+        $bloqueo = $this->carritoBloqueado($user->id);
+        if ($bloqueo['activo']) {
+            return $this->sendError("El carrito está bloqueado por un pago en proceso. Intenta nuevamente después de las {$bloqueo['expires_at']}.", [], 403);
+        }
 
         $cart = Cart::firstOrCreate(['user_id' => $user->id]);
 

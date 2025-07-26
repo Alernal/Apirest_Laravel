@@ -22,6 +22,7 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::get('/products/slug/{slug}', [ProductController::class, 'slug']);
 Route::get('/reviews', [ProductReviewController::class, 'index']);
 Route::post('/subscribers', [SubscriberController::class, 'store']);
+Route::post('/webhook/wompi', [WompiController::class, 'handleWompiWebhook']);
 
 Route::post('/email/resend', [UserController::class, 'resendVerificationEmail']);
 
@@ -42,9 +43,6 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::get('/user/{id}', [UserController::class, 'show']);
 
         Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
-
-        /* WOMPI - Pasarela de pago */
-        Route::post('/generate-link', [WompiController::class, 'generarLinkPago']);
     });
 
     Route::get('users', [UserController::class, 'index']);
@@ -53,6 +51,9 @@ Route::group(['middleware' => 'auth:api'], function () {
     Route::post('/user/profile-image', [UserController::class, 'uploadProfileImage']);
 
     Route::get('/wompi/transaction/{id}', [WompiController::class, 'getTransaction']);
+
+    /* WOMPI - Pasarela de pago */
+    Route::post('/generate-link', [WompiController::class, 'generarLinkPago']);
 
     // Product Reviews
     Route::post('/reviews', [ProductReviewController::class, 'store']);
