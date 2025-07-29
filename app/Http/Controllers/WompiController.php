@@ -68,44 +68,6 @@ class WompiController extends BaseController
         }
     }
 
-    public function handleWompiWebhook(Request $request)
-    {
-        Log::info('Webhook de Wompi recibido', [
-            'headers' => $request->headers->all(),
-            'payload' => $request->all()
-        ]);
-
-        $event = $request->input('event');
-        $transaction = $request->input('data.transaction');
-
-        // Solo nos interesa cuando la transacción es aprobada
-        if ($event !== 'transaction.updated' || ($transaction['status'] ?? null) !== 'APPROVED') {
-            return response()->json(['message' => 'Evento no procesado'], 200);
-        }
-
-        $transactionId = $transaction['id'];
-        $customerEmail = $transaction['customer_email'] ?? null;
-
-        if (!$customerEmail) {
-            Log::warning("Webhook recibido sin correo: transacción [$transactionId]");
-            return response()->json(['message' => 'Falta correo del cliente'], 400);
-        }
-
-        $user = User::where('email', $customerEmail)->first();
-        if (!$user) {
-            Log::warning("Usuario no encontrado para transacción [$transactionId] con email [$customerEmail]");
-            return response()->json(['message' => 'Usuario no encontrado'], 404);
-        }
-
-        $order = $this->crearOrdenDesdeTransaccion($transaction, $user);
-
-        if (!$order) {
-            return response()->json(['message' => 'No se pudo crear la orden (ya existía o hubo error)'], 200);
-        }
-
-        return response()->json(['message' => 'Orden creada exitosamente'], 200);
-    }
-
     public function generarLinkPago(Request $request)
     {
         $user = Auth::user();
@@ -185,7 +147,7 @@ class WompiController extends BaseController
             ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
             ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
 
-        $expiresAt = now('UTC')->addMinutes(5)->format('Y-m-d\TH:i:s');
+        $expiresAt = now('UTC')->addMinutes(120)->format('Y-m-d\TH:i:s');
 
         $payload = [
             'name' => 'NURAE',
@@ -216,17 +178,44 @@ class WompiController extends BaseController
 
             if ($response->successful() && isset($body['data']['id'])) {
                 $linkId = $body['data']['id'];
-                $expiraEn = now()->addMinutes(5)->toIso8601String();
 
-                Cache::put("link_pago_bloqueado_user_{$user->id}", [
-                    'payment_link_id' => $linkId,
-                    'expires_at' => $expiraEn
-                ], now()->addMinutes(5));
+                // Crear la orden en base al link de pago generado
+                $order = Order::create([
+                    'user_id' => $user->id,
+                    'address_id' => $address->id,
+                    'payment_method' => 'wompi',
+                    'payment_status' => 'pending',
+                    'status' => 'pending',
+                    'shipping_method' => 'standard',
+                    'shipping_cost' => $shipping,
+                    'tax' => $tax,
+                    'subtotal' => $subtotalSinIVA,
+                    'total' => $total,
+                    'reference' => $linkId,
+                    'payment_link' => "https://checkout.wompi.co/l/{$linkId}",
+                    'transaction_id' => null,
+                ]);
+
+                foreach ($cart->products as $product) {
+                    $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                        ? $product->original_price
+                        : $product->price;
+
+                    $quantity = $product->pivot->quantity;
+
+                    $order->products()->attach($product->id, [
+                        'product_name' => $product->name,
+                        'price' => $price,
+                        'quantity' => $quantity,
+                        'total' => $price * $quantity,
+                    ]);
+                }
 
                 return response()->json([
                     'url' => "https://checkout.wompi.co/l/{$linkId}",
                     'payment_link_id' => $linkId,
                     'expires_at' => $body['data']['expires_at'] ?? null,
+                    'order_id' => $order->id,
                 ]);
             } else {
                 Log::error('Error al generar link de Wompi', [
@@ -250,135 +239,103 @@ class WompiController extends BaseController
         }
     }
 
+    public function handleWompiWebhook(Request $request)
+    {
+        Log::info('Webhook de Wompi recibido', [
+            'headers' => $request->headers->all(),
+            'payload' => $request->all()
+        ]);
+
+        $event = $request->input('event');
+        $transaction = $request->input('data.transaction');
+
+        if ($event !== 'transaction.updated' || !$transaction) {
+            return response()->json(['message' => 'Evento no procesado'], 200);
+        }
+
+        $reference = $transaction['reference'] ?? null;
+        if (!$reference) {
+            Log::warning("Webhook recibido sin referencia válida", ['transaction' => $transaction]);
+            return response()->json(['message' => 'Referencia no encontrada'], 400);
+        }
+
+        $order = Order::where('reference', $reference)->first();
+        if (!$order) {
+            Log::warning("Orden no encontrada para referencia [$reference]");
+            return response()->json(['message' => 'Orden no encontrada'], 404);
+        }
+
+        $this->crearOrdenDesdeTransaccion($transaction, $order->user);
+
+        return response()->json(['message' => 'Orden actualizada'], 200);
+    }
+
     public function crearOrdenDesdeTransaccion(array $data, User $user)
     {
-        $caribbeanDepartments = [
-            'atlántico',
-            'bolívar',
-            'cesar',
-            'córdoba',
-            'la guajira',
-            'magdalena',
-            'sucre',
-            'san andrés y providencia',
-        ];
+        $reference = $data['reference'] ?? null;
+        $transactionId = $data['id'] ?? null;
+        $status = $data['status'] ?? null;
 
-        $transactionId = $data['id'];
-
-        // Validar que no se haya procesado antes
-        if (Order::where('transaction_id', $transactionId)->exists()) {
-            return null; // Orden ya existe
-        }
-
-        DB::beginTransaction();
-
-        try {
-            $address = $user->addresses()->where('is_default', true)->firstOrFail();
-            $cart = $user->cart()->with('products')->first();
-
-            if (!$cart || $cart->products->isEmpty()) {
-                throw new \Exception('El carrito está vacío.');
-            }
-
-            $cartItems = [];
-            $subtotalSinIVA = 0;
-
-            foreach ($cart->products as $product) {
-                $priceConIVA = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
-                    ? $product->original_price
-                    : $product->price;
-
-                $quantity = $product->pivot->quantity;
-
-                if ($product->stock_count !== null && $quantity > $product->stock_count) {
-                    throw new \Exception("No hay suficiente stock para '{$product->name}'");
-                }
-
-                $precioSinIVA = $priceConIVA / 1.19;
-                $subtotalSinIVA += $precioSinIVA * $quantity;
-
-                $cartItems[] = [
-                    'product_id' => $product->id,
-                    'product_name' => $product->name,
-                    'price' => $priceConIVA,
-                    'quantity' => $quantity,
-                    'total' => $priceConIVA * $quantity,
-                ];
-            }
-
-            $department = strtolower($address->state ?? '');
-            $baseShipping  = in_array($department, $caribbeanDepartments) ? 9000 : 15000;
-            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
-            $tax = $subtotalSinIVA * 0.19;
-            $total = $subtotalSinIVA + $tax + $shipping;
-
-            $order = Order::create([
-                'user_id' => $user->id,
-                'address_id' => $address->id,
-                'payment_method' => 'wompi',
-                'payment_status' => 'approved',
-                'status' => 'processing',
-                'shipping_method' => 'standard',
-                'shipping_cost' => $shipping,
-                'tax' => $tax,
-                'subtotal' => $subtotalSinIVA,
-                'total' => $total,
-                'transaction_id' => $transactionId,
-            ]);
-
-            Mail::to($user->email)->queue(new OrderCreated($order));
-
-            $order->statusLogs()->create([
-                'user_id' => null,
-                'status' => 'processing',
-                'message' => 'Orden generada automáticamente tras aprobación del pago.',
-                'tracking_url' => null,
-            ]);
-
-            foreach ($cartItems as $item) {
-                $order->products()->attach($item['product_id'], [
-                    'product_name' => $item['product_name'],
-                    'price' => $item['price'],
-                    'quantity' => $item['quantity'],
-                    'total' => $item['total'],
-                ]);
-
-                // Descontar stock
-                $product = Product::find($item['product_id']);
-                if ($product && $product->stock_count !== null) {
-                    $product->decrement('stock_count', $item['quantity']);
-                }
-            }
-
-            // Limpiar y desbloquear carrito
-            $cart->products()->detach();
-            $cart->locked = false;
-            $cart->save();
-
-            DB::commit();
-
-            return $order;
-        } catch (\Throwable $e) {
-            DB::rollBack();
-
-            Log::error("Error al crear orden desde transacción [$transactionId]: " . $e->getMessage());
-
-            // Fallback para trazabilidad
-            Order::create([
-                'user_id' => $user->id,
-                'payment_method' => 'wompi',
-                'payment_status' => 'approved',
-                'status' => 'error',
-                'shipping_method' => null,
-                'shipping_cost' => 0,
-                'tax' => 0,
-                'subtotal' => 0,
-                'total' => 0,
-                'transaction_id' => $transactionId,
-                'note' => 'Error al generar la orden. Revisión manual necesaria.',
-            ]);
-
+        if (!$reference || !$transactionId || !$status) {
+            Log::warning("Datos incompletos en transacción", ['data' => $data]);
             return null;
         }
+
+        $order = Order::where('reference', $reference)->first();
+
+        if (!$order) {
+            Log::warning("Orden no encontrada con referencia [$reference]");
+            return null;
+        }
+
+        // Ya se actualizó antes
+        if ($order->transaction_id === $transactionId) {
+            return $order;
+        }
+
+        $order->transaction_id = $transactionId;
+        $order->payment_status = 'approved';
+
+        if ($order->status === 'processing') {
+            if ($status === 'APPROVED') {
+
+                // Descontar stock y desbloquear carrito
+                $cart = $user->cart()->with('products')->first();
+                if ($cart) {
+                    foreach ($order->products as $product) {
+                        $orderedQty = $product->pivot->quantity;
+
+                        if ($product->stock_count !== null) {
+                            $product->decrement('stock_count', $orderedQty);
+                        }
+                    }
+
+                    $cart->products()->detach();
+                    $cart->locked = false;
+                    $cart->save();
+                }
+
+                // Enviar correo y registrar log
+                Mail::to($user->email)->queue(new OrderCreated($order));
+
+                $order->statusLogs()->create([
+                    'user_id' => null,
+                    'status' => 'processing',
+                    'message' => 'Pago aprobado por Wompi. Orden confirmada automáticamente.',
+                ]);
+            } elseif ($status === 'DECLINED' || $status === 'VOIDED') {
+                $order->status = 'cancelled';
+
+                $order->statusLogs()->create([
+                    'user_id' => null,
+                    'status' => 'cancelled',
+                    'message' => "Transacción Wompi marcada como $status.",
+                ]);
+            }
+        }
+
+        $order->save();
+
+        return $order;
     }
 }

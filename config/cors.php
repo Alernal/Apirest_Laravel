@@ -7,7 +7,7 @@ return [
 
     'allowed_origins'   => [
         'https://nurae.com.co',
-        'http://localhost:5173', // ← SIN SLASH FINAL
+        'http://localhost:5173',
     ],
 
     // Puedes dejar esto vacío o eliminarlo si no usas regex
