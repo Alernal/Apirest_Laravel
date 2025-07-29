@@ -121,7 +121,15 @@ class WompiController extends BaseController
         ];
 
         $department = strtolower($address->state ?? '');
-        $baseShipping = in_array($department, $caribbeanDepartments) ? 9000 : 15000;
+        $city = strtolower($address->city ?? '');
+
+        // Excepción para Sincelejo (Sucre)
+        if ($department === 'sucre' && $city === 'sincelejo') {
+            $baseShipping = 5000;
+        } else {
+            $baseShipping = in_array($department, $caribbeanDepartments) ? 9000 : 15000;
+        }
+
         $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
 
         $total = $subtotalSinIVA + $tax + $shipping;
@@ -211,6 +219,13 @@ class WompiController extends BaseController
                     ]);
                 }
 
+                $order->statusLogs()->create([
+                    'user_id' => null,
+                    'status' => 'pending',
+                    'message' => 'Orden generada. Pendiente de pago a través de Wompi.',
+                    'tracking_url' => null,
+                ]);
+
                 return response()->json([
                     'url' => "https://checkout.wompi.co/l/{$linkId}",
                     'payment_link_id' => $linkId,
@@ -294,10 +309,11 @@ class WompiController extends BaseController
         }
 
         $order->transaction_id = $transactionId;
-        $order->payment_status = 'approved';
 
-        if ($order->status === 'processing') {
+        if ($order->status === 'pending') {
             if ($status === 'APPROVED') {
+                $order->status = 'processing';
+                $order->payment_status = 'approved';
 
                 // Descontar stock y desbloquear carrito
                 $cart = $user->cart()->with('products')->first();
