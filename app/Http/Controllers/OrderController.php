@@ -11,6 +11,7 @@ use App\Models\OrderStatusHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class OrderController extends BaseController
@@ -20,7 +21,7 @@ class OrderController extends BaseController
         $user = Auth::user();
 
         if ($user->role === 'admin') {
-            $orders = Order::search()->paginate();
+            $orders = Order::search()->get();
         } else {
             $orders = Order::where('user_id', $user->id)->search()->get();
         }
@@ -88,7 +89,8 @@ class OrderController extends BaseController
 
             DB::commit();
 
-            Mail::to($order->user->email)->queue(
+            Log::info("Estado de la orden {$order->id} actualizado a: {$request->status}");
+            Mail::to($order->user->email)->send(
                 new OrderStatusUpdated($order, $request->status, $request->admin_message, $request->tracking_url)
             );
 

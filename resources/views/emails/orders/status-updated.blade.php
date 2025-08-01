@@ -7,7 +7,7 @@
 <body>
   <h2>Hola {{ $order->user->first_name }},</h2>
 
-  <p>Te informamos que el estado de tu pedido <strong>#{{ $order->id }}</strong> ha sido actualizado a:</p>
+  <p>Te informamos que el estado de tu pedido <strong>#{{ $order->transaction_id }}</strong> ha sido actualizado a:</p>
 
   <h3>{{ strtoupper($status) }}</h3>
 

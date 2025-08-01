@@ -18,7 +18,7 @@ return new class extends Migration
 
             $table->string('payment_method')->default('wompi');
             $table->string('payment_status')->default('pending');
-            $table->string('status')->default('pending'); // pending, processing, completed, etc.
+            $table->string('status')->default('pending');
             $table->string('shipping_method')->nullable();
             $table->decimal('shipping_cost', 10, 2)->default(0.00);
             $table->decimal('tax', 10, 2)->default(0.00);

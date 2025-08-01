@@ -48,6 +48,7 @@ class Order extends Model
     {
         return [
             'transaction_id',
+            'reference',
             'total',
             'user.first_name',
             'user.last_name',
