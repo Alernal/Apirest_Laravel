@@ -23,7 +23,11 @@ class OrderCreated extends Mailable implements ShouldQueue
 
     public function build()
     {
-        return $this->subject('🎉 ¡Tu orden ha sido recibida!')
+        $metodo = $this->order->payment_method === 'contraentrega'
+            ? '🛒 (Contraentrega)'
+            : '💳 (Pago en línea)';
+
+        return $this->subject('🎉 ¡Tu orden #' . $this->order->id . " ha sido recibida! $metodo")
             ->view('emails.orders.created')
             ->with([
                 'order' => $this->order,

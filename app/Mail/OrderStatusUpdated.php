@@ -17,37 +17,48 @@ class OrderStatusUpdated extends Mailable implements ShouldQueue
     public $adminMessage;
     public $trackingUrl;
 
-    /**
-     * Create a new message instance.
-     *
-     * @param  \App\Models\Order  $order
-     * @param  string  $status
-     * @param  string|null  $message
-     * @param  string|null  $trackingUrl
-     */
     public function __construct(Order $order, string $status, ?string $message = null, ?string $trackingUrl = null)
     {
-        // Aseguramos que la relación esté disponible
-        $order->loadMissing('orderItems', 'user');
-
-        $this->order = $order;
-        $this->status = $status;
-        $this->adminMessage  = $message;
-        $this->trackingUrl = $trackingUrl;
+        $order->loadMissing('orderItems', 'user', 'address');
+        $this->order        = $order;
+        $this->status       = strtolower($status);
+        $this->adminMessage = $message;
+        $this->trackingUrl  = $trackingUrl;
     }
 
-    /**
-     * Build the message.
-     */
     public function build()
     {
-        return $this->subject('Actualización del estado de tu pedido')
+        // Texto amigable según status
+        $map = [
+            'pending'            => 'Pago pendiente',
+            'processing'         => 'En preparación',
+            'shipped'            => 'Enviado',
+            'delivered'          => 'Entregado',
+            'cancelled'          => 'Cancelado',
+            'failed'             => 'Pago fallido',
+            'pending_validation' => 'En validación',
+        ];
+        $nice = $map[$this->status] ?? ucfirst($this->status);
+
+        // Emoji opcional
+        $emojiMap = [
+            'pending'            => '⏳',
+            'processing'         => '🛠️',
+            'shipped'            => '📦',
+            'delivered'          => '✅',
+            'cancelled'          => '❌',
+            'failed'             => '❌',
+            'pending_validation' => '🕒',
+        ];
+        $emoji = $emojiMap[$this->status] ?? 'ℹ️';
+
+        return $this->subject("{$emoji} Tu orden #{$this->order->id}: {$nice}")
             ->view('emails.orders.status-updated')
             ->with([
-                'order' => $this->order,
-                'status' => $this->status,
+                'order'        => $this->order,
+                'status'       => $this->status,
                 'adminMessage' => $this->adminMessage,
-                'trackingUrl' => $this->trackingUrl,
+                'trackingUrl'  => $this->trackingUrl,
             ]);
     }
 }

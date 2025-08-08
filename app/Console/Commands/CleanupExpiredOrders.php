@@ -14,12 +14,12 @@ class CleanupExpiredOrders extends Command
 
     public function handle()
     {
-        $threshold = Carbon::now()->subHours(2);
+        $threshold = Carbon::now()->subMinutes(1);
 
         $orders = Order::where('payment_status', 'pending')
-            ->where('status', 'processing')
+            ->where('status', 'pending')
             ->whereNotNull('reference')
-            ->where('created_at', '<', $threshold)
+            // ->where('created_at', '<', $threshold)
             ->get();
 
         $count = 0;

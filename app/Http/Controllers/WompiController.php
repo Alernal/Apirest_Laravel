@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\OrderCreated;
 use App\Mail\OrderFallbackCreated;
+use App\Mail\OrderStatusUpdated;
 use App\Mail\PaymentApprovedNoOrder;
 use App\Mail\WelcomeGuestAccount;
 use App\Models\Order;
@@ -42,277 +43,326 @@ class WompiController extends BaseController
         return hash('sha256', $string);
     }
 
-    public function getTransaction($id)
+    public function getTransaction(Request $request, $id)
     {
+        // Auth opcional por JWT
         try {
-            $user = Auth::user();
+            if ($token = JWTAuth::getToken()) {
+                $user = JWTAuth::authenticate($token);
+                if ($user) {
+                    Auth::login($user);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('JWT opcional, continuo como invitado: ' . $e->getMessage());
+        }
 
-            $secretKey = config('services.wompi.private_key');
+        $kind = $request->query('kind', 'tx'); // 'tx' | 'order'
 
-            $response = Http::withToken($secretKey)
-                ->get("https://sandbox.wompi.co/v1/transactions/{$id}");
+        // === Contraentrega / Consulta directa de orden ===
+        if ($kind === 'order') {
+            try {
+                $order = Order::with([
+                    'products',
+                    'user:id,first_name,email',
+                    'address',
+                ])->find($id);
+
+                if (!$order) {
+                    return $this->sendError('Orden no encontrada.', [], 404);
+                }
+
+                // status sintético para UI cuando no hay transacción
+                $status = 'PENDING_VALIDATION';
+
+                return $this->sendResponse([
+                    'status'      => $status,
+                    'order'       => $order,
+                    'transaction' => null,
+                ], 'Estado de la orden.');
+            } catch (\Throwable $e) {
+                Log::error("Error getTransaction(order {$id}): " . $e->getMessage());
+                return $this->sendError('Error al consultar la orden.', [], 500);
+            }
+        }
+
+        // === Pago estándar (consulta Wompi) ===
+        try {
+            $secretKey = env('WOMPI_PRIVATE_KEY');
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $secretKey,
+                'Content-Type'  => 'application/json',
+            ])->get("https://production.wompi.co/v1/transactions/{$id}");
 
             if (!$response->successful()) {
+                Log::error('Error consultando transacción en Wompi', [
+                    'status' => $response->status(),
+                    'body'   => $response->body(),
+                    'transaction_id' => $id,
+                ]);
                 return $this->sendError('No se pudo consultar la transacción.', [], 500);
             }
 
-            $data = $response['data'];
-            $status = $data['status'];
+            $data   = $response['data'];
+            $status = $data['status'] ?? 'UNKNOWN';
 
-            // Buscar si la orden ya existe
-            $order = Order::where('transaction_id', $id)->with('products')->first();
+            $order = Order::where('transaction_id', $id)
+                ->with(['products', 'user:id,first_name,email', 'address'])
+                ->first();
 
             return $this->sendResponse([
-                'status' => $status,
-                'order' => $order,
+                'status'      => $status,
+                'order'       => $order,
                 'transaction' => $data,
             ], 'Estado de la transacción.');
         } catch (\Throwable $e) {
-            Log::error("Error en getTransaction({$id}): " . $e->getMessage());
+            Log::error("Error getTransaction(tx {$id}): " . $e->getMessage());
             return $this->sendError('Error al consultar la transacción.', [], 500);
         }
     }
 
-    public function generarLinkPago(Request $request)
-    {
+    // public function generarLinkPago(Request $request)
+    // {
 
-        try {
-            if (!$user = JWTAuth::parseToken()->authenticate()) {
-                Log::debug('Token válido pero no se encontró el usuario.');
-            } else {
-                Log::debug('Usuario autenticado por JWT:', ['user_id' => $user->id]);
-                Auth::login($user);
-            }
-        } catch (\Exception $e) {
-            Log::debug('No se pudo autenticar vía JWT:', ['error' => $e->getMessage()]);
-        }
+    //     try {
+    //         if (!$user = JWTAuth::parseToken()->authenticate()) {
+    //             Log::debug('Token válido pero no se encontró el usuario.');
+    //         } else {
+    //             Log::debug('Usuario autenticado por JWT:', ['user_id' => $user->id]);
+    //             Auth::login($user);
+    //         }
+    //     } catch (\Exception $e) {
+    //         Log::debug('No se pudo autenticar vía JWT:', ['error' => $e->getMessage()]);
+    //     }
 
-        $user = Auth::user();
-        Log::debug('Usuario autenticado:', ['user' => $user]);
+    //     $user = Auth::user();
+    //     Log::debug('Usuario autenticado:', ['user' => $user]);
 
-        $request->validate([
-            'subtotal' => 'required|numeric|min:0',
-            'iva' => 'required|numeric|min:0',
-            'shipping' => 'required|numeric|min:0',
-            'total' => 'required|numeric|min:1',
-            'items' => 'required|array|min:1',
-        ]);
+    //     $request->validate([
+    //         'subtotal' => 'required|numeric|min:0',
+    //         'iva' => 'required|numeric|min:0',
+    //         'shipping' => 'required|numeric|min:0',
+    //         'total' => 'required|numeric|min:1',
+    //         'items' => 'required|array|min:1',
+    //     ]);
 
-        $items = collect($request->items);
-        $productIds = $items->pluck('id');
-        $products = Product::whereIn('id', $productIds)->get();
+    //     $items = collect($request->items);
+    //     $productIds = $items->pluck('id');
+    //     $products = Product::whereIn('id', $productIds)->get();
 
-        if ($products->count() !== $items->count()) {
-            return response()->json(['message' => 'Uno o más productos no existen.'], 422);
-        }
+    //     if ($products->count() !== $items->count()) {
+    //         return response()->json(['message' => 'Uno o más productos no existen.'], 422);
+    //     }
 
-        $subtotalSinIVA = 0;
-        foreach ($items as $item) {
-            $product = $products->firstWhere('id', $item['id']);
-            if (!$product) continue;
+    //     $subtotalSinIVA = 0;
+    //     foreach ($items as $item) {
+    //         $product = $products->firstWhere('id', $item['id']);
+    //         if (!$product) continue;
 
-            $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
-                ? $product->original_price
-                : $product->price;
+    //         $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+    //             ? $product->original_price
+    //             : $product->price;
 
-            $quantity = (int)$item['quantity'];
-            if ($product->stock_count !== null && $quantity > $product->stock_count) {
-                return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
-            }
+    //         $quantity = (int)$item['quantity'];
+    //         if ($product->stock_count !== null && $quantity > $product->stock_count) {
+    //             return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
+    //         }
 
-            $precioSinIVA = $price / 1.19;
-            $subtotalSinIVA += $precioSinIVA * $quantity;
-        }
+    //         $precioSinIVA = $price / 1.19;
+    //         $subtotalSinIVA += $precioSinIVA * $quantity;
+    //     }
 
-        $tax = round($subtotalSinIVA * 0.19, 2);
+    //     $tax = round($subtotalSinIVA * 0.19, 2);
 
-        $caribbeanDepartments = ['atlántico', 'bolívar', 'cesar', 'córdoba', 'la guajira', 'magdalena', 'sucre', 'san andrés y providencia'];
-        $shipping = 0;
-        $address = null;
+    //     $caribbeanDepartments = ['atlántico', 'bolívar', 'cesar', 'córdoba', 'la guajira', 'magdalena', 'sucre', 'san andrés y providencia'];
+    //     $shipping = 0;
+    //     $address = null;
 
-        if (!$user) {
-            $request->validate([
-                'guest_info.name' => 'required|string|max:255',
-                'guest_info.email' => 'required|email',
-                'address.state' => 'required|string|max:100',
-                'address.city' => 'required|string|max:100',
-                'address.address' => 'required|string|max:255',
-            ]);
+    //     if (!$user) {
+    //         $request->validate([
+    //             'guest_info.name' => 'required|string|max:255',
+    //             'guest_info.email' => 'required|email',
+    //             'address.state' => 'required|string|max:100',
+    //             'address.city' => 'required|string|max:100',
+    //             'address.address' => 'required|string|max:255',
+    //         ]);
 
-            $state = strtolower($request->input('address.state'));
-            $city = strtolower($request->input('address.city'));
+    //         $state = strtolower($request->input('address.state'));
+    //         $city = strtolower($request->input('address.city'));
 
-            $baseShipping = ($state === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($state, $caribbeanDepartments) ? 9000 : 15000);
-            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
+    //         $baseShipping = ($state === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($state, $caribbeanDepartments) ? 9000 : 15000);
+    //         $shipping = $baseShipping;
 
-            $total = $subtotalSinIVA + $tax + $shipping;
+    //         $total = ceil($subtotalSinIVA + $tax + $shipping);
 
-            if (
-                round($request->subtotal, 2) != round($subtotalSinIVA, 2) ||
-                round($request->iva, 2) != round($tax, 2) ||
-                round($request->shipping, 2) != round($shipping, 2) ||
-                round($request->total, 2) != round($total, 2)
-            ) {
-                return response()->json([
-                    'message' => 'Los valores enviados no coinciden con los calculados.',
-                    'calculado' => compact('subtotalSinIVA', 'tax', 'shipping', 'total'),
-                ], 422);
-            }
+    //         if (
+    //             round($request->subtotal, 2) != round($subtotalSinIVA, 2) ||
+    //             round($request->iva, 2) != round($tax, 2) ||
+    //             round($request->shipping, 2) != round($shipping, 2) ||
+    //             round($request->total, 2) != round($total, 2)
+    //         ) {
+    //             return response()->json([
+    //                 'message' => 'Los valores enviados no coinciden con los calculados.',
+    //                 'calculado' => compact('subtotalSinIVA', 'tax', 'shipping', 'total'),
+    //             ], 422);
+    //         }
 
-            $guestEmail = $request->input('guest_info.email');
-            $guestName = $request->input('guest_info.name');
+    //         $guestEmail = $request->input('guest_info.email');
+    //         $guestName = $request->input('guest_info.name');
 
-            $user = User::firstOrCreate(
-                ['email' => $guestEmail],
-                [
-                    'first_name' => $guestName,
-                    'password' => Hash::make(Str::random(10)),
-                    'email_verified_at' => now()
-                ]
-            );
+    //         $user = User::firstOrCreate(
+    //             ['email' => $guestEmail],
+    //             [
+    //                 'first_name' => $guestName,
+    //                 'password' => Hash::make(Str::random(10)),
+    //                 'email_verified_at' => now()
+    //             ]
+    //         );
 
-            if (!$user->wasRecentlyCreated) {
-                $password = null;
-            } else {
-                $password = Str::random(10);
-                $user->password = Hash::make($password);
-                $user->save();
+    //         if (!$user->wasRecentlyCreated) {
+    //             $password = null;
+    //         } else {
+    //             $password = Str::random(10);
+    //             $user->password = Hash::make($password);
+    //             $user->save();
 
-                try {
-                    Mail::to($guestEmail)->send(new WelcomeGuestAccount($user, $password));
-                } catch (\Throwable $e) {
-                    Log::error('No se pudo enviar correo de cuenta invitado', ['error' => $e->getMessage()]);
-                }
-            }
+    //             try {
+    //                 Mail::to($guestEmail)->send(new WelcomeGuestAccount($user, $password));
+    //             } catch (\Throwable $e) {
+    //                 Log::error('No se pudo enviar correo de cuenta invitado', ['error' => $e->getMessage()]);
+    //             }
+    //         }
 
-            $address = $user->addresses()->firstOrCreate(
-                ['is_default' => true],
-                [
-                    'name' => $guestName,
-                    'first_name' => $guestName,
-                    'last_name' => 'Cliente',
-                    'email' => $guestEmail,
-                    'phone' => '0000000000',
-                    'street_address' => $request->input('address.address'),
-                    'city' => $request->input('address.city'),
-                    'state' => $request->input('address.state'),
-                    'postal_code' => '000000',
-                    'country' => 'CO',
-                    'is_default' => true
-                ]
-            );
-        } else {
-            $cart = $user->cart()->with('products')->first();
-            if (!$cart || $cart->products->isEmpty()) {
-                return response()->json(['message' => 'El carrito está vacío.'], 422);
-            }
+    //         $address = $user->addresses()->firstOrCreate(
+    //             ['is_default' => true],
+    //             [
+    //                 'name' => $guestName,
+    //                 'first_name' => $guestName,
+    //                 'last_name' => 'Cliente',
+    //                 'email' => $guestEmail,
+    //                 'phone' => '0000000000',
+    //                 'street_address' => $request->input('address.address'),
+    //                 'city' => $request->input('address.city'),
+    //                 'state' => $request->input('address.state'),
+    //                 'postal_code' => '000000',
+    //                 'country' => 'CO',
+    //                 'is_default' => true
+    //             ]
+    //         );
+    //     } else {
+    //         $cart = $user->cart()->with('products')->first();
+    //         if (!$cart || $cart->products->isEmpty()) {
+    //             return response()->json(['message' => 'El carrito está vacío.'], 422);
+    //         }
 
-            $address = $user->addresses()->where('is_default', true)->first();
-            if (!$address) {
-                return response()->json(['message' => 'No tienes una dirección predeterminada configurada.'], 422);
-            }
+    //         $address = $user->addresses()->where('is_default', true)->first();
+    //         if (!$address) {
+    //             return response()->json(['message' => 'No tienes una dirección predeterminada configurada.'], 422);
+    //         }
 
-            $department = strtolower($address->state);
-            $city = strtolower($address->city);
-            $baseShipping = ($department === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($department, $caribbeanDepartments) ? 9000 : 15000);
-            $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
-            $total = $subtotalSinIVA + $tax + $shipping;
-        }
+    //         $department = strtolower($address->state);
+    //         $city = strtolower($address->city);
+    //         $baseShipping = ($department === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($department, $caribbeanDepartments) ? 9000 : 15000);
+    //         $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
+    //         $total = ceil($subtotalSinIVA + $tax + $shipping);
+    //     }
 
-        $amountInCents = (int)($total * 100);
-        $ivaInCents = (int)($tax * 100);
+    //     $amountInCents = (int)($total * 100);
+    //     $ivaInCents = (int)($tax * 100);
 
-        $descripcion = "Subtotal: $" . number_format($request['subtotal'], 0, ',', '.') .
-            ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
-            ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
+    //     $descripcion = "Subtotal: $" . number_format($request['subtotal'], 0, ',', '.') .
+    //         ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
+    //         ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
 
-        $expiresAt = now('UTC')->addMinutes(5)->format('Y-m-d\TH:i:s');
+    //     $expiresAt = now('UTC')->addMinutes(5)->format('Y-m-d\TH:i:s');
 
-        $payload = [
-            'name' => 'NURAE',
-            'description' => $descripcion,
-            'single_use' => true,
-            'collect_shipping' => false,
-            'currency' => 'COP',
-            'amount_in_cents' => $amountInCents,
-            'expires_at' => $expiresAt,
-            'image_url' => null,
-            'taxes' => [[
-                'type' => 'VAT',
-                'percentage' => 19,
-                'amount_in_cents' => $ivaInCents,
-            ]],
-        ];
+    //     $payload = [
+    //         'name' => 'NURAE',
+    //         'description' => $descripcion,
+    //         'single_use' => true,
+    //         'collect_shipping' => false,
+    //         'currency' => 'COP',
+    //         'amount_in_cents' => $amountInCents,
+    //         'expires_at' => $expiresAt,
+    //         'image_url' => null,
+    //         'redirect_url' => 'https://nurae.com.co/confirmacion-pago',
+    //         'taxes' => [[
+    //             'type' => 'VAT',
+    //             'percentage' => 19,
+    //             'amount_in_cents' => $ivaInCents,
+    //         ]],
+    //     ];
 
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('WOMPI_PRIVATE_KEY'),
-                'Content-Type' => 'application/json',
-            ])->post('https://production.wompi.co/v1/payment_links', $payload);
+    //     try {
+    //         $response = Http::withHeaders([
+    //             'Authorization' => 'Bearer ' . env('WOMPI_PRIVATE_KEY'),
+    //             'Content-Type' => 'application/json',
+    //         ])->post('https://production.wompi.co/v1/payment_links', $payload);
 
-            $body = $response->json();
+    //         $body = $response->json();
 
-            if ($response->successful() && isset($body['data']['id'])) {
-                $linkId = $body['data']['id'];
+    //         if ($response->successful() && isset($body['data']['id'])) {
+    //             $linkId = $body['data']['id'];
 
-                $order = Order::create([
-                    'user_id' => $user->id,
-                    'address_id' => $address->id,
-                    'payment_method' => 'wompi',
-                    'payment_status' => 'pending',
-                    'status' => 'pending',
-                    'shipping_method' => 'standard',
-                    'shipping_cost' => $shipping,
-                    'tax' => $tax,
-                    'subtotal' => $subtotalSinIVA,
-                    'total' => $total,
-                    'reference' => $linkId,
-                    'payment_link' => "https://checkout.wompi.co/l/{$linkId}",
-                    'transaction_id' => null,
-                ]);
+    //             $order = Order::create([
+    //                 'user_id' => $user->id,
+    //                 'address_id' => $address->id,
+    //                 'payment_method' => 'wompi',
+    //                 'payment_status' => 'pending',
+    //                 'status' => 'pending',
+    //                 'shipping_method' => 'standard',
+    //                 'shipping_cost' => $shipping,
+    //                 'tax' => $tax,
+    //                 'subtotal' => $subtotalSinIVA,
+    //                 'total' => $total,
+    //                 'reference' => $linkId,
+    //                 'payment_link' => "https://checkout.wompi.co/l/{$linkId}",
+    //                 'transaction_id' => null,
+    //             ]);
 
-                foreach ($items as $item) {
-                    $product = $products->firstWhere('id', $item['id']);
-                    $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
-                        ? $product->original_price
-                        : $product->price;
+    //             foreach ($items as $item) {
+    //                 $product = $products->firstWhere('id', $item['id']);
+    //                 $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+    //                     ? $product->original_price
+    //                     : $product->price;
 
-                    $order->products()->attach($product->id, [
-                        'product_name' => $product->name,
-                        'price' => $price,
-                        'quantity' => $item['quantity'],
-                        'total' => $price * $item['quantity'],
-                    ]);
-                }
+    //                 $order->products()->attach($product->id, [
+    //                     'product_name' => $product->name,
+    //                     'price' => $price,
+    //                     'quantity' => $item['quantity'],
+    //                     'total' => $price * $item['quantity'],
+    //                 ]);
+    //             }
 
-                $order->statusLogs()->create([
-                    'user_id' => null,
-                    'status' => 'pending',
-                    'message' => 'Orden generada. Pendiente de pago.',
-                ]);
-                
-                Mail::to($user->email)->send(new OrderCreated($order));
+    //             $order->statusLogs()->create([
+    //                 'user_id' => null,
+    //                 'status' => 'pending',
+    //                 'message' => 'Orden generada. Pendiente de pago.',
+    //             ]);
 
-                return response()->json([
-                    'url' => "https://checkout.wompi.co/l/{$linkId}",
-                    'payment_link_id' => $linkId,
-                    'expires_at' => $body['data']['expires_at'] ?? null,
-                    'order_id' => $order->id,
-                ]);
-            }
+    //             Mail::to($user->email)->send(new OrderCreated($order));
 
-            Log::error('Error al generar link de Wompi', [
-                'payload' => $payload,
-                'status' => $response->status(),
-                'body' => $body,
-            ]);
+    //             return response()->json([
+    //                 'url' => "https://checkout.wompi.co/l/{$linkId}",
+    //                 'payment_link_id' => $linkId,
+    //                 'expires_at' => $body['data']['expires_at'] ?? null,
+    //                 'order_id' => $order->id,
+    //             ]);
+    //         }
 
-            return response()->json(['message' => 'Error al generar el enlace de pago'], 500);
-        } catch (\Exception $e) {
-            Log::error('Excepción al generar link de Wompi', ['exception' => $e]);
-            return response()->json(['message' => 'Error interno al generar link'], 500);
-        }
-    }
+    //         Log::error('Error al generar link de Wompi', [
+    //             'payload' => $payload,
+    //             'status' => $response->status(),
+    //             'body' => $body,
+    //         ]);
+
+    //         return response()->json(['message' => 'Error al generar el enlace de pago'], 500);
+    //     } catch (\Exception $e) {
+    //         Log::error('Excepción al generar link de Wompi', ['exception' => $e]);
+    //         return response()->json(['message' => 'Error interno al generar link'], 500);
+    //     }
+    // }
 
     public function handleWompiWebhook(Request $request)
     {
@@ -371,18 +421,22 @@ class WompiController extends BaseController
         return response()->json(['message' => 'Orden actualizada'], 200);
     }
 
+    use Illuminate\Support\Facades\Mail;
+    use App\Mail\OrderStatusUpdated;
+
+    // ...
+
     public function crearOrdenDesdeTransaccion(array $data, User $user)
     {
-        $reference = $data['payment_link_id'] ?? null;
+        $reference     = $data['payment_link_id'] ?? null;
         $transactionId = $data['id'] ?? null;
-        $status = $data['status'] ?? null;
+        $status        = $data['status'] ?? null;
 
         if (!$reference || !$transactionId || !$status) {
             Log::warning("Datos incompletos en transacción", ['data' => $data]);
             return response()->json(['message' => 'Datos incompletos'], 400);
         }
 
-        // Buscar la orden por la referencia
         $order = Order::where('reference', $reference)->first();
 
         if (!$order) {
@@ -390,103 +444,609 @@ class WompiController extends BaseController
             return response()->json(['message' => 'Orden no encontrada'], 404);
         }
 
-        // Si la transacción ya está procesada (APPROVED), no hacemos nada
+        // Actualizar transaction_id siempre que venga
+        $order->transaction_id = $transactionId;
+        $order->save();
+
+        // Si ya está aprobada, no duplicar acciones
         if ($order->payment_status === 'approved') {
             Log::info("La orden ya está aprobada, no se hará ninguna acción.");
             return response()->json(['message' => 'Pago ya procesado'], 200);
         }
 
-        // Si la orden está pendiente y el pago llega pendiente, cambiar a "processing"
         if ($order->status === 'pending') {
             if ($status === 'PENDING') {
-                // Cambiar la orden a 'processing' si está pendiente y el pago sigue pendiente
+                // mover a processing pero pago sigue pendiente
                 $order->status = 'processing';
                 $order->payment_status = 'pending';
-                Log::info("La orden con referencia [$reference] se ha movido a 'processing' con estado de pago 'pending'.");
+                $order->save();
+
+                // Notificar cambio a "processing" (pago aún pendiente)
+                Mail::to($user->email)->send(
+                    new OrderStatusUpdated(
+                        $order,
+                        'processing',
+                        'Estamos preparando tu pedido mientras confirmamos el pago.'
+                    )
+                );
+
+                Log::info("Orden [$reference] -> processing (pago pending).");
             } elseif ($status === 'APPROVED') {
-                // Si llega un pago aprobado, procesamos la orden
+                // pago aprobado
                 $order->status = 'processing';
                 $order->payment_status = 'approved';
-                $order->payment_link = null;  // Limpiar payment_link_id
+                $order->payment_link = null;
+                $order->save();
 
-                // Descontar stock y desbloquear carrito
+                // Descontar stock / limpiar carrito
                 $cart = $user->cart()->with('products')->first();
                 if ($cart) {
                     foreach ($order->products as $product) {
                         $orderedQty = $product->pivot->quantity;
-
-                        if ($product->stock_count !== null) {
+                        if (!is_null($product->stock_count)) {
                             $product->decrement('stock_count', $orderedQty);
                         }
                     }
-
                     $cart->products()->detach();
                     $cart->save();
                 }
 
-                // Enviar correo de confirmación de la orden
-                Log::info("Enviando correo a: " . $user->email);
-                Mail::to($user->email)->send(new OrderCreated($order));
+                // Notificar pago aprobado (estado processing)
+                Mail::to($user->email)->send(
+                    new OrderStatusUpdated(
+                        $order,
+                        'processing',
+                        'Tu pago fue aprobado por Wompi. Estamos preparando tu pedido.'
+                    )
+                );
 
                 $order->statusLogs()->create([
                     'user_id' => null,
-                    'status' => 'processing',
+                    'status'  => 'processing',
                     'message' => 'Pago aprobado por Wompi. Orden confirmada automáticamente.',
                 ]);
-            } elseif ($status === 'DECLINED' || $status === 'VOIDED') {
+
+                Log::info("Orden [$reference] -> processing (pago approved).");
+            } elseif (in_array($status, ['DECLINED', 'VOIDED', 'ERROR'])) {
                 $order->status = 'cancelled';
                 $order->payment_status = 'failed';
                 $order->payment_link = null;
+                $order->save();
+
+                // Notificar cancelación
+                Mail::to($user->email)->send(
+                    new OrderStatusUpdated(
+                        $order,
+                        'cancelled',
+                        "La transacción fue marcada como {$status}. Si crees que es un error, contáctanos."
+                    )
+                );
 
                 $order->statusLogs()->create([
                     'user_id' => null,
-                    'status' => 'cancelled',
-                    'message' => "Transacción Wompi marcada como $status.",
+                    'status'  => 'cancelled',
+                    'message' => "Transacción Wompi marcada como {$status}.",
                 ]);
+
+                Log::info("Orden [$reference] -> cancelled ({$status}).");
             }
         } elseif ($order->status === 'processing') {
-            // Si la orden ya está en 'processing', no hacer nada si el estado sigue 'PENDING'
             if ($status === 'PENDING') {
-                Log::info("La orden con referencia [$reference] ya está en 'processing', no se hace ningún cambio.");
+                Log::info("Orden [$reference] ya en processing; pago sigue pendiente, sin cambios.");
                 return response()->json(['message' => 'La orden ya está en procesamiento'], 200);
             }
 
-            // Si llega un pago aprobado o rechazado, actualizamos el estado
             if ($status === 'APPROVED') {
                 $order->payment_status = 'approved';
                 $order->payment_link = null;
+                $order->save();
 
                 $cart = $user->cart()->with('products')->first();
                 if ($cart) {
                     foreach ($order->products as $product) {
                         $orderedQty = $product->pivot->quantity;
-
-                        if ($product->stock_count !== null) {
+                        if (!is_null($product->stock_count)) {
                             $product->decrement('stock_count', $orderedQty);
                         }
                     }
-
                     $cart->products()->detach();
                     $cart->save();
                 }
 
-                // Enviar correo de confirmación de la orden
-                Log::info("Enviando correo a: " . $user->email);
-                Mail::to($user->email)->send(new OrderCreated($order));
+                // Notificar pago aprobado
+                Mail::to($user->email)->send(
+                    new OrderStatusUpdated(
+                        $order,
+                        'processing',
+                        'Tu pago fue aprobado por Wompi. Estamos preparando tu pedido.'
+                    )
+                );
 
-                Log::info("La orden con referencia [$reference] ha sido aprobada.");
-            } elseif ($status === 'DECLINED' || $status === 'VOIDED') {
+                Log::info("Orden [$reference] processing + pago approved.");
+            } elseif (in_array($status, ['DECLINED', 'VOIDED', 'ERROR'])) {
                 $order->status = 'cancelled';
                 $order->payment_status = 'failed';
                 $order->payment_link = null;
+                $order->save();
 
-                Log::info("La orden con referencia [$reference] ha sido cancelada.");
+                // Notificar cancelación
+                Mail::to($user->email)->send(
+                    new OrderStatusUpdated(
+                        $order,
+                        'cancelled',
+                        "La transacción fue marcada como {$status}. Si crees que es un error, contáctanos."
+                    )
+                );
+
+                Log::info("Orden [$reference] -> cancelled ({$status}).");
             }
         }
 
-        // Guardar los cambios
-        $order->save();
-
         return response()->json(['message' => 'Orden actualizada correctamente'], 200);
+    }
+
+
+    /**
+     * Normaliza strings: lower, sin tildes, trim
+     */
+    private function normalize(?string $s): string
+    {
+        if (!$s) return '';
+        $s = trim(mb_strtolower($s, 'UTF-8'));
+        $s = \Normalizer::normalize($s, \Normalizer::FORM_D);
+        // elimina diacríticos
+        $s = preg_replace('/\p{Mn}+/u', '', $s);
+        // normaliza espacios
+        $s = preg_replace('/\s+/', ' ', $s);
+        return $s ?: '';
+    }
+
+    /**
+     * Obtiene y cachea el JSON de Colombia (24h)
+     * Estructura: [ ['departamento' => 'Antioquia', 'ciudades' => ['Medellín', ...]], ... ]
+     *
+     * @return array<int, array{departamento:string, ciudades:array<int,string>}>
+     */
+    private function getColombiaJson(): array
+    {
+        return Cache::remember('colombia_json_v1', now()->addHours(24), function () {
+            $res = Http::timeout(10)->get('https://raw.githubusercontent.com/marcovega/colombia-json/master/colombia.min.json');
+            if (!$res->ok()) {
+                Log::warning('No se pudo cargar colombia.min.json, status: ' . $res->status());
+                return [];
+            }
+            $data = $res->json();
+            if (!is_array($data)) return [];
+            // Limpieza básica
+            foreach ($data as &$d) {
+                if (isset($d['departamento']) && isset($d['ciudades']) && is_array($d['ciudades'])) {
+                    $d['departamento'] = trim($d['departamento']);
+                    $d['ciudades'] = array_values(array_unique(array_map('trim', $d['ciudades'])));
+                    sort($d['ciudades'], SORT_NATURAL | SORT_FLAG_CASE);
+                }
+            }
+            return $data;
+        });
+    }
+
+    /**
+     * Valida y devuelve el par (Departamento, Ciudad) en su forma "oficial" del JSON.
+     * Si la ciudad no pertenece al dpto → null.
+     *
+     * @return array{state:string, city:string}|null
+     */
+    private function canonizeDepartmentCity(string $state, string $city): ?array
+    {
+        $stateN = $this->normalize($state);
+        $cityN  = $this->normalize($city);
+        $col    = $this->getColombiaJson();
+
+        foreach ($col as $row) {
+            $rowStateN = $this->normalize($row['departamento'] ?? '');
+            if ($rowStateN === $stateN) {
+                foreach ($row['ciudades'] ?? [] as $c) {
+                    if ($this->normalize($c) === $cityN) {
+                        return [
+                            'state' => $row['departamento'],
+                            'city'  => $c,
+                        ];
+                    }
+                }
+                // dpto encontrado pero ciudad no coincide
+                return null;
+            }
+        }
+        // dpto no encontrado
+        return null;
+    }
+
+    /**
+     * Determina si un departamento pertenece a la región Caribe.
+     * Usa la misma lista que en el frontend, pero con normalización robusta.
+     */
+    private function isCaribbeanDepartment(string $state): bool
+    {
+        $caribbeanDepartments = [
+            'atlántico',
+            'bolívar',
+            'cesar',
+            'córdoba',
+            'la guajira',
+            'magdalena',
+            'sucre',
+            'san andrés y providencia',
+        ];
+        $stateN = $this->normalize($state);
+        foreach ($caribbeanDepartments as $dep) {
+            if ($this->normalize($dep) === $stateN) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Calcula el costo de envío siguiendo EXACTAMENTE la regla del frontend:
+     * - totalBruto = subtotalSinIVA + tax
+     * - totalBruto >= 150000 => 0
+     * - Sucre+Sincelejo => 5000
+     * - Caribe => 9000 + round(1% de totalBruto)
+     * - Resto => 15000 + round(1% de totalBruto)
+     */
+    private function calculateShipping(?string $state, ?string $city, float $subtotalSinIVA, float $tax): int
+    {
+        $totalBruto = $subtotalSinIVA + $tax;
+
+        if (!$state || !$city) {
+            // Sin address completa: cobrar como "resto" + 1%
+            return 15000 + (int) round($totalBruto * 0.01);
+        }
+
+        $stateN = $this->normalize($state);
+        $cityN  = $this->normalize($city);
+
+        // Sincelejo fijo (sin 1%)
+        if ($stateN === $this->normalize('sucre') && $cityN === $this->normalize('sincelejo')) {
+            return 5000;
+        }
+
+        // Caribe + 1%
+        if ($this->isCaribbeanDepartment($state)) {
+            return 9000 + (int) round($totalBruto * 0.01);
+        }
+
+        // Resto + 1%
+        return 15000 + (int) round($totalBruto * 0.01);
+    }
+
+    public function generarLinkPago(Request $request)
+    {
+        // --- Auth por JWT si llega token ---
+        try {
+            if (!$user = JWTAuth::parseToken()->authenticate()) {
+                Log::debug('Token válido pero no se encontró el usuario.');
+            } else {
+                Log::debug('Usuario autenticado por JWT:', ['user_id' => $user->id]);
+                Auth::login($user);
+            }
+        } catch (\Exception $e) {
+            Log::debug('No se pudo autenticar vía JWT:', ['error' => $e->getMessage()]);
+        }
+
+        $user = Auth::user();
+        Log::debug('Usuario autenticado:', ['user' => $user?->only('id', 'email')]);
+
+        // --- Validación base ---
+        $request->validate([
+            'shipping_type' => 'required|in:standard,contraentrega',
+            'subtotal' => 'required|numeric|min:0',
+            'iva'      => 'required|numeric|min:0',
+            'shipping' => 'required|numeric|min:0',
+            'total'    => 'required|numeric|min:1',
+            'items'    => 'required|array|min:1',
+        ]);
+
+        $shippingType = $request->string('shipping_type')->toString();
+
+        $items = collect($request->items);
+        $productIds = $items->pluck('id');
+        $products = Product::whereIn('id', $productIds)->get();
+
+        if ($products->count() !== $items->count()) {
+            return response()->json(['message' => 'Uno o más productos no existen.'], 422);
+        }
+
+        // --- Recalcular subtotalSinIVA y validar stock ---
+        $subtotalSinIVA = 0;
+        foreach ($items as $item) {
+            $product = $products->firstWhere('id', $item['id']);
+            if (!$product) continue;
+
+            $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                ? $product->original_price
+                : $product->price;
+
+            $quantity = (int) $item['quantity'];
+            if ($product->stock_count !== null && $quantity > $product->stock_count) {
+                return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
+            }
+
+            $precioSinIVA = $price / 1.19;
+            $subtotalSinIVA += $precioSinIVA * $quantity;
+        }
+
+        $tax = round($subtotalSinIVA * 0.19, 2);
+        $address = null;
+        $shipping = 0;
+
+        // --- Invitado vs logueado ---
+        if (!$user) {
+            $request->validate([
+                'guest_info.name'       => 'required|string|max:255',
+                'guest_info.email'      => 'required|email',
+                'address.state'         => 'required|string|max:100',
+                'address.city'          => 'required|string|max:100',
+                'address.address'       => 'required|string|max:255',
+            ]);
+
+            // Canonizar dpto/ciudad al formato oficial del JSON (y validar pertenencia)
+            $canon = $this->canonizeDepartmentCity(
+                $request->input('address.state'),
+                $request->input('address.city')
+            );
+            if (!$canon) {
+                return response()->json(['message' => 'Departamento y ciudad no coinciden con el listado oficial.'], 422);
+            }
+
+            $state = $canon['state'];
+            $city  = $canon['city'];
+            $shipping = $this->calculateShipping($state, $city, $subtotalSinIVA, $tax);
+
+            $totalBruto = $subtotalSinIVA + $tax;
+            $total = ceil($totalBruto + $shipping);
+
+            // Validación de totales enviados vs calculados
+            if (
+                round($request->subtotal, 2) != round($subtotalSinIVA, 2) ||
+                round($request->iva, 2)      != round($tax, 2) ||
+                round($request->shipping, 2) != round($shipping, 2) ||
+                round($request->total, 2)    != round($total, 2)
+            ) {
+                return response()->json([
+                    'message'   => 'Los valores enviados no coinciden con los calculados.',
+                    'calculado' => [
+                        'subtotalSinIVA' => $subtotalSinIVA,
+                        'tax'            => $tax,
+                        'shipping'       => $shipping,
+                        'total'          => $total,
+                    ],
+                ], 422);
+            }
+
+            // Crear/obtener usuario invitado
+            $guestEmail = $request->input('guest_info.email');
+            $guestName  = $request->input('guest_info.name');
+
+            $user = User::firstOrCreate(
+                ['email' => $guestEmail],
+                [
+                    'first_name' => $guestName,
+                    'password'   => Hash::make(Str::random(10)),
+                    'email_verified_at' => now()
+                ]
+            );
+
+            // Si se creó, enviar bienvenida con password
+            if ($user->wasRecentlyCreated) {
+                $password = Str::random(10);
+                $user->password = Hash::make($password);
+                $user->save();
+                try {
+                    Mail::to($guestEmail)->send(new WelcomeGuestAccount($user, $password));
+                } catch (\Throwable $e) {
+                    Log::error('No se pudo enviar correo de cuenta invitado', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Dirección por defecto (o crearla)
+            $address = $user->addresses()->firstOrCreate(
+                ['is_default' => true],
+                [
+                    'name'          => $guestName,
+                    'first_name'    => $guestName,
+                    'last_name'     => 'Cliente',
+                    'email'         => $guestEmail,
+                    'phone'         => '0000000000',
+                    'street_address' => $request->input('address.address'),
+                    'city'          => $city,
+                    'state'         => $state,
+                    'postal_code'   => '000000',
+                    'country'       => 'CO',
+                    'is_default'    => true
+                ]
+            );
+        } else {
+            // Usuario logueado
+            $cart = $user->cart()->with('products')->first();
+            if (!$cart || $cart->products->isEmpty()) {
+                return response()->json(['message' => 'El carrito está vacío.'], 422);
+            }
+
+            $address = $user->addresses()->where('is_default', true)->first();
+            if (!$address) {
+                return response()->json(['message' => 'No tienes una dirección predeterminada configurada.'], 422);
+            }
+
+            // Canoniza/valida dpto-ciudad del address guardado
+            $canon = $this->canonizeDepartmentCity($address->state, $address->city);
+            if (!$canon) {
+                // Si no valida, igual intentamos calcular con lo que hay (pero logeamos)
+                Log::warning('Address del usuario no coincide con listado oficial', [
+                    'state' => $address->state,
+                    'city' => $address->city,
+                    'user_id' => $user->id
+                ]);
+                $state = $address->state;
+                $city  = $address->city;
+            } else {
+                $state = $canon['state'];
+                $city  = $canon['city'];
+            }
+
+            $shipping = $this->calculateShipping($state, $city, $subtotalSinIVA, $tax);
+            $totalBruto = $subtotalSinIVA + $tax;
+            $total = ceil($totalBruto + $shipping);
+        }
+
+        // ---- Si el tipo de envío es CONTRAENTREGA → crear orden directo, sin Wompi ----
+        if ($shippingType === 'contraentrega') {
+
+            $reference = 'CE-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(6));
+
+            $order = Order::create([
+                'user_id'        => $user->id,
+                'address_id'     => $address->id,
+                'payment_method' => 'contraentrega',
+                'payment_status' => 'pending',  // pendiente de pago al recibir
+                'status'         => 'pending',
+                'shipping_method' => 'contraentrega',
+                'shipping_cost'  => $shipping,
+                'tax'            => $tax,
+                'subtotal'       => $subtotalSinIVA,
+                'total'          => ceil($subtotalSinIVA + $tax + $shipping),
+                'reference'      => $reference,
+                'payment_link'   => null,
+                'transaction_id' => null,
+            ]);
+
+            foreach ($items as $item) {
+                $product = $products->firstWhere('id', $item['id']);
+                $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                    ? $product->original_price
+                    : $product->price;
+
+                $order->products()->attach($product->id, [
+                    'product_name' => $product->name,
+                    'price'        => $price,
+                    'quantity'     => $item['quantity'],
+                    'total'        => $price * $item['quantity'],
+                ]);
+            }
+
+            $order->statusLogs()->create([
+                'user_id' => null,
+                'status'  => 'pending',
+                'message' => 'Orden generada. Pago contraentrega.',
+            ]);
+
+            try {
+                Mail::to($user->email)->send(new OrderCreated($order));
+            } catch (\Throwable $e) {
+                Log::error('No se pudo enviar correo de orden contraentrega', ['error' => $e->getMessage()]);
+            }
+
+            return response()->json([
+                'message'  => 'Orden creada para pago contraentrega.',
+                'order_id' => $order->id,
+            ], 201);
+        }
+
+        // ---- STANDARD → Generación de link Wompi (como ya lo tenías) ----
+        $amountInCents = (int) round(($subtotalSinIVA + $tax + $shipping) * 100);
+        $ivaInCents    = (int) round($tax * 100);
+
+        $descripcion = "Subtotal: $" . number_format($request['subtotal'], 0, ',', '.') .
+            ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
+            ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
+
+        $expiresAt = now('UTC')->addMinutes(5)->format('Y-m-d\TH:i:s');
+
+        $payload = [
+            'name'            => 'NURAE',
+            'description'     => $descripcion,
+            'single_use'      => true,
+            'collect_shipping' => false,
+            'currency'        => 'COP',
+            'amount_in_cents' => $amountInCents,
+            'expires_at'      => $expiresAt,
+            'image_url'       => null,
+            'redirect_url'    => 'https://nurae.com.co/confirmacion-pago',
+            'taxes'           => [[
+                'type' => 'VAT',
+                'percentage' => 19,
+                'amount_in_cents' => $ivaInCents,
+            ]],
+        ];
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('WOMPI_PRIVATE_KEY'),
+                'Content-Type'  => 'application/json',
+            ])->post('https://production.wompi.co/v1/payment_links', $payload);
+
+            $body = $response->json();
+
+            if ($response->successful() && isset($body['data']['id'])) {
+                $linkId = $body['data']['id'];
+
+                $order = Order::create([
+                    'user_id'        => $user->id,
+                    'address_id'     => $address->id,
+                    'payment_method' => 'wompi',
+                    'payment_status' => 'pending',
+                    'status'         => 'pending',
+                    'shipping_method' => 'standard',
+                    'shipping_cost'  => $shipping,
+                    'tax'            => $tax,
+                    'subtotal'       => $subtotalSinIVA,
+                    'total'          => ceil($subtotalSinIVA + $tax + $shipping),
+                    'reference'      => $linkId,
+                    'payment_link'   => "https://checkout.wompi.co/l/{$linkId}",
+                    'transaction_id' => null,
+                ]);
+
+                foreach ($items as $item) {
+                    $product = $products->firstWhere('id', $item['id']);
+                    $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
+                        ? $product->original_price
+                        : $product->price;
+
+                    $order->products()->attach($product->id, [
+                        'product_name' => $product->name,
+                        'price'        => $price,
+                        'quantity'     => $item['quantity'],
+                        'total'        => $price * $item['quantity'],
+                    ]);
+                }
+
+                $order->statusLogs()->create([
+                    'user_id' => null,
+                    'status'  => 'pending',
+                    'message' => 'Orden generada. Pendiente de pago.',
+                ]);
+
+                try {
+                    Mail::to($user->email)->send(new OrderCreated($order));
+                } catch (\Throwable $e) {
+                    Log::error('No se pudo enviar correo de orden standard', ['error' => $e->getMessage()]);
+                }
+
+                return response()->json([
+                    'url'             => "https://checkout.wompi.co/l/{$linkId}",
+                    'payment_link_id' => $linkId,
+                    'expires_at'      => $body['data']['expires_at'] ?? null,
+                    'order_id'        => $order->id,
+                ]);
+            }
+
+            Log::error('Error al generar link de Wompi', [
+                'payload' => $payload,
+                'status'  => $response->status(),
+                'body'    => $body,
+            ]);
+
+            return response()->json(['message' => 'Error al generar el enlace de pago'], 500);
+        } catch (\Exception $e) {
+            Log::error('Excepción al generar link de Wompi', ['exception' => $e]);
+            return response()->json(['message' => 'Error interno al generar link'], 500);
+        }
     }
 }
