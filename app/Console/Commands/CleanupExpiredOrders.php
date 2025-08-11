@@ -16,8 +16,8 @@ class CleanupExpiredOrders extends Command
     {
         $threshold = Carbon::now()->subMinutes(1);
 
-        $orders = Order::where('payment_status', 'pending')
-            ->where('status', 'pending')
+        $orders = Order::where('payment_status', 'failed')
+            ->where('status', 'cancelled')
             ->whereNotNull('reference')
             // ->where('created_at', '<', $threshold)
             ->get();

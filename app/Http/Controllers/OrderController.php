@@ -21,9 +21,14 @@ class OrderController extends BaseController
         $user = Auth::user();
 
         if ($user->role === 'admin') {
-            $orders = Order::search()->get();
+            $orders = Order::search()
+                ->orderBy('created_at', 'desc')
+                ->get();
         } else {
-            $orders = Order::where('user_id', $user->id)->search()->get();
+            $orders = Order::where('user_id', $user->id)
+                ->search()
+                ->orderBy('created_at', 'desc')
+                ->get();
         }
 
         return $this->sendResponse(OrderResource::collection($orders), 'Lista de ordenes obtenida exitosamente.');

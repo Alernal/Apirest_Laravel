@@ -122,248 +122,6 @@ class WompiController extends BaseController
         }
     }
 
-    // public function generarLinkPago(Request $request)
-    // {
-
-    //     try {
-    //         if (!$user = JWTAuth::parseToken()->authenticate()) {
-    //             Log::debug('Token válido pero no se encontró el usuario.');
-    //         } else {
-    //             Log::debug('Usuario autenticado por JWT:', ['user_id' => $user->id]);
-    //             Auth::login($user);
-    //         }
-    //     } catch (\Exception $e) {
-    //         Log::debug('No se pudo autenticar vía JWT:', ['error' => $e->getMessage()]);
-    //     }
-
-    //     $user = Auth::user();
-    //     Log::debug('Usuario autenticado:', ['user' => $user]);
-
-    //     $request->validate([
-    //         'subtotal' => 'required|numeric|min:0',
-    //         'iva' => 'required|numeric|min:0',
-    //         'shipping' => 'required|numeric|min:0',
-    //         'total' => 'required|numeric|min:1',
-    //         'items' => 'required|array|min:1',
-    //     ]);
-
-    //     $items = collect($request->items);
-    //     $productIds = $items->pluck('id');
-    //     $products = Product::whereIn('id', $productIds)->get();
-
-    //     if ($products->count() !== $items->count()) {
-    //         return response()->json(['message' => 'Uno o más productos no existen.'], 422);
-    //     }
-
-    //     $subtotalSinIVA = 0;
-    //     foreach ($items as $item) {
-    //         $product = $products->firstWhere('id', $item['id']);
-    //         if (!$product) continue;
-
-    //         $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
-    //             ? $product->original_price
-    //             : $product->price;
-
-    //         $quantity = (int)$item['quantity'];
-    //         if ($product->stock_count !== null && $quantity > $product->stock_count) {
-    //             return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
-    //         }
-
-    //         $precioSinIVA = $price / 1.19;
-    //         $subtotalSinIVA += $precioSinIVA * $quantity;
-    //     }
-
-    //     $tax = round($subtotalSinIVA * 0.19, 2);
-
-    //     $caribbeanDepartments = ['atlántico', 'bolívar', 'cesar', 'córdoba', 'la guajira', 'magdalena', 'sucre', 'san andrés y providencia'];
-    //     $shipping = 0;
-    //     $address = null;
-
-    //     if (!$user) {
-    //         $request->validate([
-    //             'guest_info.name' => 'required|string|max:255',
-    //             'guest_info.email' => 'required|email',
-    //             'address.state' => 'required|string|max:100',
-    //             'address.city' => 'required|string|max:100',
-    //             'address.address' => 'required|string|max:255',
-    //         ]);
-
-    //         $state = strtolower($request->input('address.state'));
-    //         $city = strtolower($request->input('address.city'));
-
-    //         $baseShipping = ($state === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($state, $caribbeanDepartments) ? 9000 : 15000);
-    //         $shipping = $baseShipping;
-
-    //         $total = ceil($subtotalSinIVA + $tax + $shipping);
-
-    //         if (
-    //             round($request->subtotal, 2) != round($subtotalSinIVA, 2) ||
-    //             round($request->iva, 2) != round($tax, 2) ||
-    //             round($request->shipping, 2) != round($shipping, 2) ||
-    //             round($request->total, 2) != round($total, 2)
-    //         ) {
-    //             return response()->json([
-    //                 'message' => 'Los valores enviados no coinciden con los calculados.',
-    //                 'calculado' => compact('subtotalSinIVA', 'tax', 'shipping', 'total'),
-    //             ], 422);
-    //         }
-
-    //         $guestEmail = $request->input('guest_info.email');
-    //         $guestName = $request->input('guest_info.name');
-
-    //         $user = User::firstOrCreate(
-    //             ['email' => $guestEmail],
-    //             [
-    //                 'first_name' => $guestName,
-    //                 'password' => Hash::make(Str::random(10)),
-    //                 'email_verified_at' => now()
-    //             ]
-    //         );
-
-    //         if (!$user->wasRecentlyCreated) {
-    //             $password = null;
-    //         } else {
-    //             $password = Str::random(10);
-    //             $user->password = Hash::make($password);
-    //             $user->save();
-
-    //             try {
-    //                 Mail::to($guestEmail)->send(new WelcomeGuestAccount($user, $password));
-    //             } catch (\Throwable $e) {
-    //                 Log::error('No se pudo enviar correo de cuenta invitado', ['error' => $e->getMessage()]);
-    //             }
-    //         }
-
-    //         $address = $user->addresses()->firstOrCreate(
-    //             ['is_default' => true],
-    //             [
-    //                 'name' => $guestName,
-    //                 'first_name' => $guestName,
-    //                 'last_name' => 'Cliente',
-    //                 'email' => $guestEmail,
-    //                 'phone' => '0000000000',
-    //                 'street_address' => $request->input('address.address'),
-    //                 'city' => $request->input('address.city'),
-    //                 'state' => $request->input('address.state'),
-    //                 'postal_code' => '000000',
-    //                 'country' => 'CO',
-    //                 'is_default' => true
-    //             ]
-    //         );
-    //     } else {
-    //         $cart = $user->cart()->with('products')->first();
-    //         if (!$cart || $cart->products->isEmpty()) {
-    //             return response()->json(['message' => 'El carrito está vacío.'], 422);
-    //         }
-
-    //         $address = $user->addresses()->where('is_default', true)->first();
-    //         if (!$address) {
-    //             return response()->json(['message' => 'No tienes una dirección predeterminada configurada.'], 422);
-    //         }
-
-    //         $department = strtolower($address->state);
-    //         $city = strtolower($address->city);
-    //         $baseShipping = ($department === 'sucre' && $city === 'sincelejo') ? 5000 : (in_array($department, $caribbeanDepartments) ? 9000 : 15000);
-    //         $shipping = $subtotalSinIVA >= 126050.42 ? 0 : $baseShipping;
-    //         $total = ceil($subtotalSinIVA + $tax + $shipping);
-    //     }
-
-    //     $amountInCents = (int)($total * 100);
-    //     $ivaInCents = (int)($tax * 100);
-
-    //     $descripcion = "Subtotal: $" . number_format($request['subtotal'], 0, ',', '.') .
-    //         ", IVA: $" . number_format($request['iva'], 0, ',', '.') .
-    //         ", Envío: $" . number_format($request['shipping'], 0, ',', '.');
-
-    //     $expiresAt = now('UTC')->addMinutes(5)->format('Y-m-d\TH:i:s');
-
-    //     $payload = [
-    //         'name' => 'NURAE',
-    //         'description' => $descripcion,
-    //         'single_use' => true,
-    //         'collect_shipping' => false,
-    //         'currency' => 'COP',
-    //         'amount_in_cents' => $amountInCents,
-    //         'expires_at' => $expiresAt,
-    //         'image_url' => null,
-    //         'redirect_url' => 'https://nurae.com.co/confirmacion-pago',
-    //         'taxes' => [[
-    //             'type' => 'VAT',
-    //             'percentage' => 19,
-    //             'amount_in_cents' => $ivaInCents,
-    //         ]],
-    //     ];
-
-    //     try {
-    //         $response = Http::withHeaders([
-    //             'Authorization' => 'Bearer ' . env('WOMPI_PRIVATE_KEY'),
-    //             'Content-Type' => 'application/json',
-    //         ])->post('https://production.wompi.co/v1/payment_links', $payload);
-
-    //         $body = $response->json();
-
-    //         if ($response->successful() && isset($body['data']['id'])) {
-    //             $linkId = $body['data']['id'];
-
-    //             $order = Order::create([
-    //                 'user_id' => $user->id,
-    //                 'address_id' => $address->id,
-    //                 'payment_method' => 'wompi',
-    //                 'payment_status' => 'pending',
-    //                 'status' => 'pending',
-    //                 'shipping_method' => 'standard',
-    //                 'shipping_cost' => $shipping,
-    //                 'tax' => $tax,
-    //                 'subtotal' => $subtotalSinIVA,
-    //                 'total' => $total,
-    //                 'reference' => $linkId,
-    //                 'payment_link' => "https://checkout.wompi.co/l/{$linkId}",
-    //                 'transaction_id' => null,
-    //             ]);
-
-    //             foreach ($items as $item) {
-    //                 $product = $products->firstWhere('id', $item['id']);
-    //                 $price = ($product->original_price && $product->original_price > 0 && $product->original_price < $product->price)
-    //                     ? $product->original_price
-    //                     : $product->price;
-
-    //                 $order->products()->attach($product->id, [
-    //                     'product_name' => $product->name,
-    //                     'price' => $price,
-    //                     'quantity' => $item['quantity'],
-    //                     'total' => $price * $item['quantity'],
-    //                 ]);
-    //             }
-
-    //             $order->statusLogs()->create([
-    //                 'user_id' => null,
-    //                 'status' => 'pending',
-    //                 'message' => 'Orden generada. Pendiente de pago.',
-    //             ]);
-
-    //             Mail::to($user->email)->send(new OrderCreated($order));
-
-    //             return response()->json([
-    //                 'url' => "https://checkout.wompi.co/l/{$linkId}",
-    //                 'payment_link_id' => $linkId,
-    //                 'expires_at' => $body['data']['expires_at'] ?? null,
-    //                 'order_id' => $order->id,
-    //             ]);
-    //         }
-
-    //         Log::error('Error al generar link de Wompi', [
-    //             'payload' => $payload,
-    //             'status' => $response->status(),
-    //             'body' => $body,
-    //         ]);
-
-    //         return response()->json(['message' => 'Error al generar el enlace de pago'], 500);
-    //     } catch (\Exception $e) {
-    //         Log::error('Excepción al generar link de Wompi', ['exception' => $e]);
-    //         return response()->json(['message' => 'Error interno al generar link'], 500);
-    //     }
-    // }
-
     public function handleWompiWebhook(Request $request)
     {
         Log::info('Webhook de Wompi recibido');
@@ -397,7 +155,7 @@ class WompiController extends BaseController
 
                 if ($email) {
                     try {
-                        Mail::to($email)->send(new PaymentApprovedNoOrder(
+                        Mail::to($email)->queue(new PaymentApprovedNoOrder(
                             $name,
                             $reference,
                             $transaction['id']
@@ -420,11 +178,6 @@ class WompiController extends BaseController
 
         return response()->json(['message' => 'Orden actualizada'], 200);
     }
-
-    use Illuminate\Support\Facades\Mail;
-    use App\Mail\OrderStatusUpdated;
-
-    // ...
 
     public function crearOrdenDesdeTransaccion(array $data, User $user)
     {
@@ -462,7 +215,7 @@ class WompiController extends BaseController
                 $order->save();
 
                 // Notificar cambio a "processing" (pago aún pendiente)
-                Mail::to($user->email)->send(
+                Mail::to($user->email)->queue(
                     new OrderStatusUpdated(
                         $order,
                         'processing',
@@ -492,7 +245,7 @@ class WompiController extends BaseController
                 }
 
                 // Notificar pago aprobado (estado processing)
-                Mail::to($user->email)->send(
+                Mail::to($user->email)->queue(
                     new OrderStatusUpdated(
                         $order,
                         'processing',
@@ -514,7 +267,7 @@ class WompiController extends BaseController
                 $order->save();
 
                 // Notificar cancelación
-                Mail::to($user->email)->send(
+                Mail::to($user->email)->queue(
                     new OrderStatusUpdated(
                         $order,
                         'cancelled',
@@ -554,7 +307,7 @@ class WompiController extends BaseController
                 }
 
                 // Notificar pago aprobado
-                Mail::to($user->email)->send(
+                Mail::to($user->email)->queue(
                     new OrderStatusUpdated(
                         $order,
                         'processing',
@@ -570,7 +323,7 @@ class WompiController extends BaseController
                 $order->save();
 
                 // Notificar cancelación
-                Mail::to($user->email)->send(
+                Mail::to($user->email)->queue(
                     new OrderStatusUpdated(
                         $order,
                         'cancelled',
@@ -769,22 +522,35 @@ class WompiController extends BaseController
                 return response()->json(['message' => "Stock insuficiente para el producto: {$product->name}"], 422);
             }
 
-            $precioSinIVA = $price / 1.19;
+            $precioSinIVA = $price;
             $subtotalSinIVA += $precioSinIVA * $quantity;
         }
 
-        $tax = round($subtotalSinIVA * 0.19, 2);
+        $tax = round($subtotalSinIVA * 0, 2);
         $address = null;
         $shipping = 0;
 
         // --- Invitado vs logueado ---
         if (!$user) {
             $request->validate([
-                'guest_info.name'       => 'required|string|max:255',
-                'guest_info.email'      => 'required|email',
-                'address.state'         => 'required|string|max:100',
-                'address.city'          => 'required|string|max:100',
-                'address.address'       => 'required|string|max:255',
+                // info de compra (ya validadas antes: subtotal/iva/shipping/total/items/shipping_type)
+                'guest_info.name'            => 'nullable|string|max:255',
+                'guest_info.first_name'      => 'required|string|max:100',
+                'guest_info.last_name'       => 'required|string|max:100',
+                'guest_info.email'           => 'required|email',
+                'guest_info.phone'           => 'required|string|max:30',
+                'guest_info.company'         => 'nullable|string|max:255',
+                'guest_info.document_type'   => 'required|in:CC,NIT,RUC,RFC',
+                'guest_info.document_number' => 'required|string|max:50',
+                'guest_info.fiscal_name'     => 'nullable|string|max:255',
+
+                'address.state'              => 'required|string|max:100',
+                'address.city'               => 'required|string|max:100',
+                'address.address'            => 'required|string|max:255', // calle principal
+                'address.apartment'          => 'nullable|string|max:100',
+                'address.postal_code'        => 'nullable|string|max:20',
+                'address.country'            => 'nullable|string|max:100',
+                'address.notes'              => 'nullable|string|max:500',
             ]);
 
             // Canonizar dpto/ciudad al formato oficial del JSON (y validar pertenencia)
@@ -821,16 +587,20 @@ class WompiController extends BaseController
                 ], 422);
             }
 
-            // Crear/obtener usuario invitado
-            $guestEmail = $request->input('guest_info.email');
-            $guestName  = $request->input('guest_info.name');
+            $guestEmail   = $request->input('guest_info.email');
+            $firstName    = $request->input('guest_info.first_name');
+            $lastName     = $request->input('guest_info.last_name');
+            $displayName  = $request->input('guest_info.name') ?: trim($firstName . ' ' . $lastName);
+            $phone        = $request->input('guest_info.phone');
 
             $user = User::firstOrCreate(
                 ['email' => $guestEmail],
                 [
-                    'first_name' => $guestName,
-                    'password'   => Hash::make(Str::random(10)),
-                    'email_verified_at' => now()
+                    'first_name'        => $firstName,
+                    'last_name'         => $lastName,
+                    'phone'             => $phone,
+                    'password'          => Hash::make(Str::random(10)),
+                    'email_verified_at' => now(),
                 ]
             );
 
@@ -840,28 +610,46 @@ class WompiController extends BaseController
                 $user->password = Hash::make($password);
                 $user->save();
                 try {
-                    Mail::to($guestEmail)->send(new WelcomeGuestAccount($user, $password));
+                    Mail::to($guestEmail)->queue(new WelcomeGuestAccount($user, $password));
                 } catch (\Throwable $e) {
                     Log::error('No se pudo enviar correo de cuenta invitado', ['error' => $e->getMessage()]);
                 }
             }
 
+            $streetBase   = $request->input('address.address');    // calle principal
+            $apartment    = trim((string)$request->input('address.apartment', ''));
+            $streetFull   = trim($streetBase . ($apartment ? (' ' . $apartment) : ''));
+
+            // ¿Primera dirección? -> la marcamos por defecto
+            $markDefault = !$user->addresses()->exists();
+
+            $addressData = [
+                'name'            => $displayName,
+                'first_name'      => $firstName,
+                'last_name'       => $lastName,
+                'email'           => $guestEmail,
+                'phone'           => $phone,
+                'company'         => $request->input('guest_info.company'),
+                'document_type'   => $request->input('guest_info.document_type'),
+                'document_number' => $request->input('guest_info.document_number'),
+                'fiscal_name'     => $request->input('guest_info.fiscal_name'),
+                'street_address'  => $streetFull,
+                'city'            => $city,
+                'state'           => $state,
+                'postal_code'     => $request->input('address.postal_code', '000000'),
+                'country'         => $request->input('address.country', 'CO'),
+                'notes'           => $request->input('address.notes'),
+                'is_default'      => $markDefault,
+            ];
+
             // Dirección por defecto (o crearla)
             $address = $user->addresses()->firstOrCreate(
-                ['is_default' => true],
                 [
-                    'name'          => $guestName,
-                    'first_name'    => $guestName,
-                    'last_name'     => 'Cliente',
-                    'email'         => $guestEmail,
-                    'phone'         => '0000000000',
-                    'street_address' => $request->input('address.address'),
-                    'city'          => $city,
-                    'state'         => $state,
-                    'postal_code'   => '000000',
-                    'country'       => 'CO',
-                    'is_default'    => true
-                ]
+                    'street_address' => $streetFull,
+                    'city'           => $city,
+                    'state'          => $state,
+                ],
+                $addressData
             );
         } else {
             // Usuario logueado
@@ -938,7 +726,7 @@ class WompiController extends BaseController
             ]);
 
             try {
-                Mail::to($user->email)->send(new OrderCreated($order));
+                Mail::to($user->email)->queue((new OrderCreated($order->id))->afterCommit());
             } catch (\Throwable $e) {
                 Log::error('No se pudo enviar correo de orden contraentrega', ['error' => $e->getMessage()]);
             }
@@ -1024,7 +812,7 @@ class WompiController extends BaseController
                 ]);
 
                 try {
-                    Mail::to($user->email)->send(new OrderCreated($order));
+                    Mail::to($user->email)->queue((new OrderCreated($order->id))->afterCommit());
                 } catch (\Throwable $e) {
                     Log::error('No se pudo enviar correo de orden standard', ['error' => $e->getMessage()]);
                 }

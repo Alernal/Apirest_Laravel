@@ -6,31 +6,29 @@ use App\Models\Order;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Queue\SerializesModels;
 
 class OrderCreated extends Mailable implements ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use Queueable;
 
-    public $order;
+    public int $orderId;
 
-    public function __construct(Order $order)
+    public function __construct(int $orderId)
     {
-        // Carga relaciones necesarias para el correo
-        $order->loadMissing('user', 'orderItems');
-        $this->order = $order;
+        $this->orderId = $orderId;
     }
 
     public function build()
     {
-        $metodo = $this->order->payment_method === 'contraentrega'
+        $order = Order::with(['user', 'orderItems'])->findOrFail($this->orderId);
+
+        $metodo = $order->payment_method === 'contraentrega'
             ? '🛒 (Contraentrega)'
             : '💳 (Pago en línea)';
 
-        return $this->subject('🎉 ¡Tu orden #' . $this->order->id . " ha sido recibida! $metodo")
-            ->view('emails.orders.created')
-            ->with([
-                'order' => $this->order,
+        return $this->subject('🎉 ¡Tu orden #'.$order->id.' ha sido recibida! '.$metodo)
+            ->view('emails.orders.created', [
+                'order' => $order,
             ]);
     }
 }
